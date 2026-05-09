@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Hugo's Productivity">
+  <defs>
+    <linearGradient id="stroke" x1="48" y1="28" x2="150" y2="164" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eef6ff"/>
+      <stop offset=".45" stop-color="#68e8ff"/>
+      <stop offset="1" stop-color="#4dffd2"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="40" y1="28" x2="152" y2="164" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111923"/>
+      <stop offset="1" stop-color="#05070a"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="44" fill="#05070a"/>
+  <rect x="22" y="22" width="148" height="148" rx="36" fill="url(#panel)" stroke="#172536" stroke-width="2"/>
+  <path d="M52 96c0-30 17-50 44-50s44 20 44 50-17 50-44 50-44-20-44-50Z" fill="none" stroke="url(#stroke)" stroke-width="7" opacity=".95"/>
+  <path d="M70 65v62M122 65v62M70 96h52" fill="none" stroke="#eef6ff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M144 52 54 142" fill="none" stroke="#68e8ff" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+  <circle cx="144" cy="52" r="6" fill="#4dffd2"/>
+  <circle cx="54" cy="142" r="5" fill="#68e8ff"/>
+</svg>

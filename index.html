@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#05070a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hugo's Productivity" />
+    <title>Hugo's Productivity</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="./supabase-config.js" defer></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand" aria-label="Hugo's Productivity">
+          <img class="brand-mark" src="./assets/icon.svg" alt="" />
+          <div>
+            <strong>Hugo's Productivity</strong>
+            <span id="todayLabel">Hoy</span>
+          </div>
+        </div>
+
+        <label class="search-field">
+          <i data-lucide="search" aria-hidden="true"></i>
+          <input id="searchInput" type="search" placeholder="Buscar tarea, nota o etiqueta" autocomplete="off" />
+        </label>
+
+        <div class="top-actions">
+          <div class="cloud-status" id="cloudStatus">
+            <i data-lucide="cloud" aria-hidden="true"></i>
+            <span>Solo local</span>
+          </div>
+          <button class="icon-button" id="notifyBtn" type="button" title="Activar avisos" aria-label="Activar avisos">
+            <i data-lucide="bell-ring" aria-hidden="true"></i>
+          </button>
+          <button class="icon-button" id="installBtn" type="button" title="Instalar" aria-label="Instalar">
+            <i data-lucide="download" aria-hidden="true"></i>
+          </button>
+          <button class="icon-button" id="exportBtn" type="button" title="Exportar datos" aria-label="Exportar datos">
+            <i data-lucide="file-down" aria-hidden="true"></i>
+          </button>
+          <button class="icon-button" id="importBtn" type="button" title="Importar datos" aria-label="Importar datos">
+            <i data-lucide="file-up" aria-hidden="true"></i>
+          </button>
+          <input id="importFile" type="file" accept="application/json" hidden />
+        </div>
+      </header>
+
+      <aside class="control-panel">
+        <section class="panel-section now-panel" aria-labelledby="nowHeading">
+          <div class="section-heading">
+            <p class="eyebrow">Ahora</p>
+            <h1 id="nowHeading">Elige el siguiente paso</h1>
+          </div>
+
+          <div class="quick-controls">
+            <label class="number-field">
+              <span>Tiempo</span>
+              <input id="availableMinutes" type="number" min="5" max="240" step="5" value="45" />
+              <span>min</span>
+            </label>
+            <button class="primary-action" id="pickTaskBtn" type="button">
+              <i data-lucide="sparkles" aria-hidden="true"></i>
+              <span>Qué hago ahora</span>
+            </button>
+          </div>
+
+          <div class="mood-grid" role="group" aria-label="Estado o contexto">
+            <button class="mood-chip active" data-mood="normal" type="button">Normal</button>
+            <button class="mood-chip" data-mood="quick" type="button">Rápido</button>
+            <button class="mood-chip" data-mood="low" type="button">Ligero</button>
+            <button class="mood-chip" data-mood="focused" type="button">Foco</button>
+          </div>
+
+          <article class="focus-result" id="focusResult" aria-live="polite"></article>
+        </section>
+
+        <section class="panel-section cloud-panel" id="cloudPanel" aria-labelledby="cloudHeading" hidden>
+          <h2 id="cloudHeading" class="sr-only">Sincronización</h2>
+          <form id="authForm" class="auth-form">
+            <label>
+              <span>Email</span>
+              <input id="authEmail" type="email" placeholder="tu@email.com" autocomplete="email" />
+            </label>
+            <button class="primary-action" id="authBtn" type="submit">
+              <i data-lucide="mail" aria-hidden="true"></i>
+              <span>Entrar</span>
+            </button>
+          </form>
+
+          <form id="passwordForm" class="auth-form password-form">
+            <label>
+              <span>Contraseña</span>
+              <input id="authPassword" type="password" placeholder="Tu contraseña" autocomplete="current-password" />
+            </label>
+            <button class="ghost-action" id="passwordBtn" type="submit">
+              <i data-lucide="lock-keyhole" aria-hidden="true"></i>
+              <span>Clave</span>
+            </button>
+          </form>
+
+          <form id="verifyForm" class="auth-form verify-form" hidden>
+            <label>
+              <span>Código</span>
+              <input id="authCode" type="text" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
+            </label>
+            <button class="primary-action" id="verifyCodeBtn" type="submit">
+              <i data-lucide="key-round" aria-hidden="true"></i>
+              <span>Verificar</span>
+            </button>
+          </form>
+          <p class="auth-hint" id="authHint">Usa el enlace del email, el código o una contraseña creada en Supabase.</p>
+
+          <div class="cloud-actions">
+            <button class="ghost-action" id="syncNowBtn" type="button">
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              <span>Sincronizar</span>
+            </button>
+            <button class="ghost-action" id="signOutBtn" type="button" hidden>
+              <i data-lucide="log-out" aria-hidden="true"></i>
+              <span>Salir</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-section composer-panel" aria-labelledby="composerHeading">
+          <div class="section-heading compact-heading">
+            <p class="eyebrow">Nueva acción</p>
+            <h2 id="composerHeading">Captura rápida</h2>
+          </div>
+
+          <form id="taskForm" class="task-form">
+            <input id="editingId" type="hidden" />
+            <label>
+              <span>Acción</span>
+              <input id="taskTitle" type="text" placeholder="Ej. ir al gimnasio" maxlength="120" required />
+            </label>
+
+            <div class="field-grid">
+              <label>
+                <span>Fecha</span>
+                <input id="taskDate" type="date" />
+              </label>
+              <label>
+                <span>Hora</span>
+                <input id="taskTime" type="time" />
+              </label>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>Aviso</span>
+                <input id="taskReminderDate" type="date" />
+              </label>
+              <label>
+                <span>Hora aviso</span>
+                <input id="taskReminderTime" type="time" />
+              </label>
+            </div>
+
+            <div class="field-grid">
+              <label>
+                <span>Duración</span>
+                <input id="taskDuration" type="number" min="5" max="480" step="5" value="30" />
+              </label>
+              <label>
+                <span>Importancia</span>
+                <input id="taskImportance" type="range" min="1" max="5" step="1" value="3" />
+              </label>
+            </div>
+
+            <details class="advanced-fields">
+              <summary>Opciones</summary>
+              <div class="field-grid">
+                <label>
+                  <span>Energía</span>
+                  <select id="taskEnergy">
+                    <option value="baja">Baja</option>
+                    <option value="media" selected>Media</option>
+                    <option value="alta">Alta</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Lugar</span>
+                  <select id="taskPlace">
+                    <option value="donde">Donde sea</option>
+                    <option value="casa">Casa</option>
+                    <option value="fuera">Fuera</option>
+                    <option value="online">Online</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="field-grid">
+                <label>
+                  <span>Área</span>
+                  <select id="taskArea">
+                    <option value="personal">Personal</option>
+                    <option value="estudio">Estudio</option>
+                    <option value="trabajo">Trabajo</option>
+                    <option value="salud">Salud</option>
+                    <option value="casa">Casa</option>
+                    <option value="creativo">Creativo</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Repetir</span>
+                  <select id="taskRepeat">
+                    <option value="none">No</option>
+                    <option value="weekdays">Días concretos</option>
+                    <option value="weeklyTarget">Veces por semana</option>
+                    <option value="daily">Diario</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensual</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="weekday-picker" id="weekdayPicker" aria-label="Días de repetición" hidden>
+                <label><input type="checkbox" name="repeatDay" value="1" />L</label>
+                <label><input type="checkbox" name="repeatDay" value="2" />M</label>
+                <label><input type="checkbox" name="repeatDay" value="3" />X</label>
+                <label><input type="checkbox" name="repeatDay" value="4" />J</label>
+                <label><input type="checkbox" name="repeatDay" value="5" />V</label>
+                <label><input type="checkbox" name="repeatDay" value="6" />S</label>
+                <label><input type="checkbox" name="repeatDay" value="7" />D</label>
+              </div>
+
+              <label class="weekly-target-control" id="weeklyTargetControl" hidden>
+                <span>Veces por semana</span>
+                <input id="taskWeeklyTarget" type="number" min="1" max="7" step="1" value="4" />
+              </label>
+
+              <label>
+                <span>Notas</span>
+                <textarea id="taskNotes" rows="3" placeholder="Detalles, etiquetas o enlaces"></textarea>
+              </label>
+            </details>
+
+            <div class="form-actions">
+              <button class="primary-action" type="submit">
+                <i data-lucide="plus" aria-hidden="true"></i>
+                <span id="submitLabel">Añadir</span>
+              </button>
+              <button class="ghost-action" id="cancelEditBtn" type="button" hidden>
+                <i data-lucide="x" aria-hidden="true"></i>
+                <span>Cancelar</span>
+              </button>
+            </div>
+          </form>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <nav class="view-tabs" aria-label="Vistas">
+          <button class="view-tab active" data-view="today" type="button">
+            <i data-lucide="sun" aria-hidden="true"></i>
+            <span>Hoy</span>
+          </button>
+          <button class="view-tab" data-view="pending" type="button">
+            <i data-lucide="list-checks" aria-hidden="true"></i>
+            <span>Pendientes</span>
+          </button>
+          <button class="view-tab" data-view="calendar" type="button">
+            <i data-lucide="calendar-days" aria-hidden="true"></i>
+            <span>Calendario</span>
+          </button>
+          <button class="view-tab" data-view="radar" type="button">
+            <i data-lucide="radar" aria-hidden="true"></i>
+            <span>Radar</span>
+          </button>
+        </nav>
+
+        <section class="stats-strip" id="statsStrip" aria-label="Resumen" hidden></section>
+
+        <section class="board-section day-plan-section" id="dayPlanSection" aria-labelledby="dayPlanTitle">
+          <div class="board-header">
+            <div>
+              <p class="eyebrow">Día seleccionado</p>
+              <h2 id="dayPlanTitle">Qué puedes hacer</h2>
+            </div>
+            <span class="date-chip" id="dayPlanDate">Hoy</span>
+          </div>
+          <div id="dayPlanList" class="day-plan-list"></div>
+        </section>
+
+        <section class="board-section" id="taskBoardSection" aria-labelledby="boardTitle">
+          <div class="board-header">
+            <div>
+              <p class="eyebrow" id="boardEyebrow">Plan</p>
+              <h2 id="boardTitle">Hoy</h2>
+            </div>
+            <label class="sort-field">
+              <span>Orden</span>
+              <select id="sortMode">
+                <option value="smart">Inteligente</option>
+                <option value="near">Cercanía</option>
+                <option value="importance">Importancia</option>
+                <option value="duration">Duración</option>
+              </select>
+            </label>
+          </div>
+          <div id="taskBoard" class="task-list"></div>
+        </section>
+
+        <section class="board-section calendar-section" id="calendarSection" aria-labelledby="calendarTitle">
+          <div class="board-header">
+            <button class="icon-button" id="prevMonthBtn" type="button" title="Mes anterior" aria-label="Mes anterior">
+              <i data-lucide="chevron-left" aria-hidden="true"></i>
+            </button>
+            <div>
+              <p class="eyebrow">Calendario</p>
+              <h2 id="calendarTitle">Mes</h2>
+            </div>
+            <div class="calendar-actions">
+              <button class="ghost-action compact" id="todayBtn" type="button">
+                <i data-lucide="calendar-check" aria-hidden="true"></i>
+                <span>Hoy</span>
+              </button>
+              <button class="icon-button" id="nextMonthBtn" type="button" title="Mes siguiente" aria-label="Mes siguiente">
+                <i data-lucide="chevron-right" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <div class="calendar-grid" id="calendarGrid"></div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
