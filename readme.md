@@ -15,7 +15,6 @@ URL publicada: [hugosproductivity.netlify.app](https://hugosproductivity.netlify
 
 - Capturar tareas rápido con fecha, hora, duración, importancia, energía, lugar, área y notas.
 - Ver el plan del día, los pendientes, un calendario mensual y una vista de radar.
-- Pedirle a la app que recomiende el siguiente paso según el tiempo disponible y el contexto.
 - Crear rutinas diarias, semanales, mensuales, por días concretos o por objetivo semanal.
 - Activar avisos con fecha y hora usando notificaciones del navegador.
 - Buscar tareas por título, notas o etiquetas.
@@ -25,7 +24,7 @@ URL publicada: [hugosproductivity.netlify.app](https://hugosproductivity.netlify
 
 ## Por Qué Es Diferente
 
-Hugo's Productivity no intenta ser un gestor universal para equipos enormes. Está pensada para una persona que quiere decidir mejor qué hacer ahora, mantener rutinas vivas y tener un sistema claro sin pelearse con veinte pantallas.
+Hugo's Productivity no intenta ser un gestor universal para equipos enormes. Está pensada para una persona que quiere mantener rutinas vivas, ordenar pendientes y tener un sistema claro sin pelearse con veinte pantallas.
 
 La app combina tres ideas:
 

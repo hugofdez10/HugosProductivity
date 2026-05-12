@@ -54,34 +54,6 @@
       </header>
 
       <aside class="control-panel">
-        <section class="panel-section now-panel" aria-labelledby="nowHeading">
-          <div class="section-heading">
-            <p class="eyebrow">Ahora</p>
-            <h1 id="nowHeading">Elige el siguiente paso</h1>
-          </div>
-
-          <div class="quick-controls">
-            <label class="number-field">
-              <span>Tiempo</span>
-              <input id="availableMinutes" type="number" min="5" max="240" step="5" value="45" />
-              <span>min</span>
-            </label>
-            <button class="primary-action" id="pickTaskBtn" type="button">
-              <i data-lucide="sparkles" aria-hidden="true"></i>
-              <span>Qué hago ahora</span>
-            </button>
-          </div>
-
-          <div class="mood-grid" role="group" aria-label="Estado o contexto">
-            <button class="mood-chip active" data-mood="normal" type="button">Normal</button>
-            <button class="mood-chip" data-mood="quick" type="button">Rápido</button>
-            <button class="mood-chip" data-mood="low" type="button">Ligero</button>
-            <button class="mood-chip" data-mood="focused" type="button">Foco</button>
-          </div>
-
-          <article class="focus-result" id="focusResult" aria-live="polite"></article>
-        </section>
-
         <section class="panel-section cloud-panel" id="cloudPanel" aria-labelledby="cloudHeading" hidden>
           <h2 id="cloudHeading" class="sr-only">Sincronización</h2>
           <form id="authForm" class="auth-form">
@@ -300,7 +272,7 @@
             <label class="sort-field">
               <span>Orden</span>
               <select id="sortMode">
-                <option value="smart">Inteligente</option>
+                <option value="smart">Prioridad</option>
                 <option value="near">Cercanía</option>
                 <option value="importance">Importancia</option>
                 <option value="duration">Duración</option>

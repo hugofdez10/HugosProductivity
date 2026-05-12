@@ -5,11 +5,9 @@ const DEFAULT_DATA_VERSION = 2;
 const DEFAULT_TASKS = [];
 const DEFAULT_FILTERS = {
   view: "today",
-  mood: "normal",
   query: "",
   sort: "smart",
   selectedDate: toDateKey(new Date()),
-  availableMinutes: 45,
 };
 
 const state = {
@@ -21,6 +19,7 @@ const state = {
   ui: {
     searchTimer: null,
     renderFrame: null,
+    reminderCheckRunning: false,
   },
   sync: {
     client: null,
@@ -78,9 +77,6 @@ function cacheElements() {
     "authHint",
     "syncNowBtn",
     "signOutBtn",
-    "availableMinutes",
-    "pickTaskBtn",
-    "focusResult",
     "taskForm",
     "editingId",
     "taskTitle",
@@ -126,33 +122,6 @@ function bindEvents() {
   els.searchInput.addEventListener("input", (event) => {
     state.filters.query = event.target.value.trim().toLowerCase();
     debounceSearchRender();
-  });
-
-  els.availableMinutes.addEventListener("input", (event) => {
-    state.filters.availableMinutes = clampNumber(event.target.value, 5, 240, 45);
-    saveState();
-    renderSoon();
-  });
-
-  els.pickTaskBtn.addEventListener("click", () => {
-    const best = rankTasks()[0];
-    if (!best) {
-      toast("No hay tareas pendientes para recomendar.");
-      return;
-    }
-    state.filters.selectedDate = getTaskDisplayDate(best.task) || toDateKey(new Date());
-    state.filters.view = "pending";
-    render();
-    document.querySelector(`[data-task-id="${best.task.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    toast(`Empieza por: ${best.task.title}`);
-  });
-
-  document.querySelectorAll(".mood-chip").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.filters.mood = button.dataset.mood;
-      saveState();
-      render();
-    });
   });
 
   document.querySelectorAll(".view-tab").forEach((button) => {
@@ -229,8 +198,10 @@ function bindEvents() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       syncNow({ silent: true });
+      checkReminders();
     }
   });
+  window.addEventListener("focus", () => checkReminders());
 }
 
 function handleTaskListClick(event) {
@@ -285,7 +256,6 @@ function readStoredState(storageKey) {
 }
 
 function applyStateToControls() {
-  els.availableMinutes.value = state.filters.availableMinutes;
   els.searchInput.value = state.filters.query;
   els.sortMode.value = state.filters.sort;
   els.installBtn.classList.add("hidden");
@@ -328,9 +298,7 @@ function saveState() {
     defaultDataVersion: DEFAULT_DATA_VERSION,
     ownerEmail: getStorageOwnerEmail(),
     filters: {
-      mood: state.filters.mood,
       sort: state.filters.sort,
-      availableMinutes: state.filters.availableMinutes,
     },
   };
   const storageKey = state.sync.storageKey || getActiveStorageKey();
@@ -357,10 +325,8 @@ function ensureDefaultTasks(currentVersion) {
 function render() {
   els.todayLabel.textContent = formatLongDate(new Date());
   renderTabs();
-  renderMood();
   renderCloudSync();
   renderStats();
-  renderFocus();
   renderDayPlan();
   renderTaskBoard();
   renderCalendar();
@@ -394,12 +360,6 @@ function renderTabs() {
   els.calendarSection.classList.toggle("hidden", false);
   els.taskBoardSection.classList.toggle("hidden", calendarOnly && window.innerWidth < 760);
   els.sortMode.closest(".sort-field").classList.toggle("hidden", radarOnly);
-}
-
-function renderMood() {
-  document.querySelectorAll(".mood-chip").forEach((button) => {
-    button.classList.toggle("active", button.dataset.mood === state.filters.mood);
-  });
 }
 
 function renderCloudSync() {
@@ -487,50 +447,6 @@ function renderStats() {
   }
 }
 
-function renderFocus() {
-  const ranked = rankTasks();
-  if (!ranked.length) {
-    els.focusResult.innerHTML = `
-      <p class="empty-copy">Tu lista pendiente está limpia. Añade una tarea para que Hugo's Productivity pueda ordenar el día.</p>
-    `;
-    return;
-  }
-
-  const best = ranked[0];
-  const dueText = formatDue(best.task);
-  els.focusResult.innerHTML = `
-    <div class="focus-title">
-      <strong>${escapeHtml(best.task.title)}</strong>
-      <span class="focus-score">${Math.round(best.score)}</span>
-    </div>
-    <ul class="reason-list">
-      ${best.reasons.slice(0, 4).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}
-    </ul>
-    <div class="task-meta">
-      <span>${dueText}</span>
-      <span>${best.task.duration} min</span>
-      <span>${capitalize(best.task.energy)}</span>
-    </div>
-    <div class="focus-actions">
-      <button class="primary-action" type="button" data-focus-complete="${best.task.id}">
-        <i data-lucide="check" aria-hidden="true"></i>
-        <span>Hecho</span>
-      </button>
-      <button class="ghost-action" type="button" data-focus-edit="${best.task.id}">
-        <i data-lucide="pencil" aria-hidden="true"></i>
-        <span>Editar</span>
-      </button>
-    </div>
-  `;
-
-  els.focusResult.querySelector("[data-focus-complete]")?.addEventListener("click", () => {
-    completeTask(best.task.id, getTaskDisplayDate(best.task));
-  });
-  els.focusResult.querySelector("[data-focus-edit]")?.addEventListener("click", () => {
-    editTask(best.task.id);
-  });
-}
-
 function renderDayPlan() {
   const selectedDate = state.filters.selectedDate || toDateKey(new Date());
   const tasks = getTasksForDate(selectedDate).filter(matchesQuery);
@@ -605,15 +521,15 @@ function renderTaskBoard() {
 function renderRadar() {
   const today = toDateKey(new Date());
   const active = state.tasks.filter((task) => !task.completed && matchesQuery(task));
-  const rankedIds = new Set(rankTasks().slice(0, 5).map((item) => item.task.id));
+  const priorityIds = new Set(sortTasks(active).slice(0, 5).map((task) => task.id));
   const lanes = [
     {
-      title: "Ahora",
-      tasks: active.filter((task) => rankedIds.has(task.id)),
+      title: "Prioridad",
+      tasks: active.filter((task) => priorityIds.has(task.id)),
     },
     {
       title: "Esta semana",
-      tasks: active.filter((task) => task.dueDate && diffDays(today, task.dueDate) >= 0 && diffDays(today, task.dueDate) <= 7 && !rankedIds.has(task.id)),
+      tasks: active.filter((task) => task.dueDate && diffDays(today, task.dueDate) >= 0 && diffDays(today, task.dueDate) <= 7 && !priorityIds.has(task.id)),
     },
     {
       title: "Sin fecha",
@@ -655,13 +571,16 @@ function renderCalendar() {
   const calendarBuckets = getCalendarBuckets(calendarDays.map(toDateKey));
   const dayButtons = calendarDays.map((date) => {
     const key = toDateKey(date);
-    const bucket = calendarBuckets.get(key) || { pending: [], completed: [] };
+    const bucket = calendarBuckets.get(key) || { pending: [], completed: [], weeklyTargets: [] };
     const tasks = bucket.pending;
     const completedTasks = bucket.completed;
     const dayItems = [
       ...tasks.map((task) => ({ task, completed: false })),
       ...completedTasks.map((task) => ({ task, completed: true })),
     ];
+    const weeklyTargetItems = bucket.weeklyTargets;
+    const visibleNormalItems = dayItems.slice(0, Math.max(0, 3 - weeklyTargetItems.length));
+    const totalItems = dayItems.length + weeklyTargetItems.length;
     const outside = date.getMonth() !== monthStart.getMonth();
     const classes = [
       "calendar-day",
@@ -669,6 +588,7 @@ function renderCalendar() {
       key === today ? "today" : "",
       key === state.filters.selectedDate ? "selected" : "",
       completedTasks.length ? "has-done" : "",
+      weeklyTargetItems.length ? "has-weekly-target" : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -676,8 +596,9 @@ function renderCalendar() {
       <button class="${classes}" type="button" data-date="${key}">
         <span class="day-number">${date.getDate()}</span>
         <span class="day-items">
-          ${dayItems.slice(0, 3).map((item) => `<span class="day-item ${item.completed ? "done" : ""}">${escapeHtml(item.task.title)}</span>`).join("")}
-          ${dayItems.length > 3 ? `<span class="more-items">+${dayItems.length - 3}</span>` : ""}
+          ${visibleNormalItems.map((item) => `<span class="day-item ${item.completed ? "done" : ""}">${escapeHtml(item.task.title)}</span>`).join("")}
+          ${weeklyTargetItems.slice(0, 3).map((item) => `<span class="day-routine ${item.completed ? "done" : ""}"><span class="routine-dot" aria-hidden="true"></span>${escapeHtml(item.task.title)} ${item.progress}</span>`).join("")}
+          ${totalItems > 3 ? `<span class="more-items">+${totalItems - 3}</span>` : ""}
         </span>
       </button>
     `;
@@ -687,7 +608,7 @@ function renderCalendar() {
 }
 
 function getCalendarBuckets(dateKeys) {
-  const buckets = new Map(dateKeys.map((key) => [key, { pending: [], completed: [] }]));
+  const buckets = new Map(dateKeys.map((key) => [key, { pending: [], completed: [], weeklyTargets: [] }]));
   const dateKeySet = new Set(dateKeys);
 
   state.tasks.forEach((task) => {
@@ -699,6 +620,18 @@ function getCalendarBuckets(dateKeys) {
       dateKeys.forEach((dateKey) => {
         const bucket = buckets.get(dateKey);
         if (!bucket) {
+          return;
+        }
+        if (task.repeat === "weeklyTarget") {
+          const stats = getWeeklyTargetStats(task, dateKey);
+          const completed = (task.doneDates || []).includes(dateKey);
+          if (completed || isRecurringTaskOnDate(task, dateKey)) {
+            bucket.weeklyTargets.push({
+              task,
+              completed,
+              progress: `${stats.done}/${stats.target}`,
+            });
+          }
           return;
         }
         if ((task.doneDates || []).includes(dateKey)) {
@@ -750,8 +683,6 @@ function getVisibleTasks() {
 }
 
 function sortTasks(tasks) {
-  const scored = rankTasks(tasks).map((item) => [item.task.id, item.score]);
-  const scoreMap = new Map(scored);
   const sortMode = state.filters.sort;
 
   return [...tasks].sort((a, b) => {
@@ -764,7 +695,7 @@ function sortTasks(tasks) {
     if (sortMode === "duration") {
       return a.duration - b.duration || b.importance - a.importance;
     }
-    return (scoreMap.get(b.id) || 0) - (scoreMap.get(a.id) || 0);
+    return compareDue(a, b) || b.importance - a.importance || a.duration - b.duration;
   });
 }
 
@@ -897,107 +828,6 @@ function scheduleCardTemplate(entry) {
       </div>
     </article>
   `;
-}
-
-function rankTasks(sourceTasks = state.tasks.filter((task) => !isTaskDoneForRanking(task) && matchesQuery(task))) {
-  return sourceTasks
-    .filter((task) => !isTaskDoneForRanking(task))
-    .map((task) => {
-      const result = scoreTask(task);
-      return { task, score: result.score, reasons: result.reasons };
-    })
-    .sort((a, b) => b.score - a.score);
-}
-
-function scoreTask(task) {
-  let score = task.importance * 20;
-  const reasons = [`Importancia ${task.importance}/5`];
-  const now = new Date();
-  const due = getTaskDueDate(task, getTaskDisplayDate(task));
-
-  if (due) {
-    const hours = (due.getTime() - now.getTime()) / 36e5;
-    if (hours < 0) {
-      score += 72 + Math.min(30, Math.abs(hours) / 12);
-      reasons.push("va tarde");
-    } else if (hours <= 2) {
-      score += 58;
-      reasons.push("muy cerca");
-    } else if (hours <= 12) {
-      score += 42;
-      reasons.push("hoy");
-    } else if (hours <= 36) {
-      score += 30;
-      reasons.push("mañana");
-    } else if (hours <= 168) {
-      score += 15;
-      reasons.push("esta semana");
-    } else {
-      score += 4;
-    }
-  } else {
-    score += 5;
-    reasons.push("sin fecha");
-  }
-
-  const available = Number(state.filters.availableMinutes) || 45;
-  if (task.duration <= available) {
-    score += 18;
-    reasons.push(`cabe en ${available} min`);
-  } else {
-    const penalty = Math.min(28, (task.duration - available) / 8);
-    score -= penalty;
-    reasons.push(`${task.duration} min`);
-  }
-
-  const mood = state.filters.mood;
-  const text = `${task.title} ${task.notes} ${task.area}`.toLowerCase();
-  if (mood === "quick") {
-    if (task.duration <= 15) {
-      score += 34;
-      reasons.push("rápida");
-    } else if (task.duration <= 30) {
-      score += 17;
-    }
-  }
-  if (mood === "low") {
-    if (task.energy === "baja") {
-      score += 32;
-      reasons.push("energía baja");
-    } else if (task.energy === "alta") {
-      score -= 16;
-    }
-  }
-  if (mood === "focused") {
-    if (task.energy !== "baja") {
-      score += 18;
-      reasons.push("requiere foco");
-    }
-    if (task.importance >= 4) {
-      score += 12;
-    }
-  }
-  if (mood === "home") {
-    if (["casa", "donde", "online"].includes(task.place)) {
-      score += 20;
-      reasons.push("encaja en casa");
-    } else {
-      score -= 12;
-    }
-  }
-  if (mood === "out") {
-    if (task.place === "fuera" || task.place === "donde") {
-      score += 20;
-      reasons.push("encaja fuera");
-    } else {
-      score -= 12;
-    }
-  }
-  if (text.includes("crear") || text.includes("diseñ") || text.includes("escribir") || task.area === "creativo") {
-    score += mood === "focused" ? 8 : 2;
-  }
-
-  return { score, reasons: [...new Set(reasons)] };
 }
 
 function taskCardTemplate(task, compact = false, occurrenceDate = "") {
@@ -1383,13 +1213,6 @@ function isTaskCompletedForDate(task, dateKey = "") {
   return Boolean(task.completed);
 }
 
-function isTaskDoneForRanking(task) {
-  if (isRecurringTask(task)) {
-    return !getNextOccurrenceKey(task);
-  }
-  return Boolean(task.completed);
-}
-
 function isPastCompletedRoutine(task) {
   if (!isRecurringTask(task)) {
     return Boolean(task.completed);
@@ -1433,14 +1256,7 @@ function shouldSuggestWeeklyTargetOnDate(task, dateKey) {
   if (isTaskCompletedForDate(task, dateKey)) {
     return false;
   }
-  const stats = getWeeklyTargetStats(task, dateKey);
-  if (stats.remaining <= 0) {
-    return false;
-  }
-  const selectedWeekday = getIsoWeekday(fromDateKey(dateKey));
-  const expectedByThisDay = Math.ceil((stats.target * selectedWeekday) / 7);
-  const doneBeforeThisDay = stats.doneDates.filter((doneDate) => compareDateKeys(doneDate, dateKey) < 0).length;
-  return doneBeforeThisDay < expectedByThisDay || stats.daysLeft <= stats.remaining;
+  return getScheduledWeeklyTargetDates(task, dateKey).includes(dateKey);
 }
 
 function getWeeklyTargetStats(task, dateKey) {
@@ -1463,6 +1279,39 @@ function getWeeklyTargetStats(task, dateKey) {
     weekStartKey,
     weekEndKey,
   };
+}
+
+function getScheduledWeeklyTargetDates(task, dateKey) {
+  const stats = getWeeklyTargetStats(task, dateKey);
+  if (stats.remaining <= 0) {
+    return [];
+  }
+
+  const todayKey = toDateKey(new Date());
+  if (compareDateKeys(stats.weekEndKey, todayKey) < 0) {
+    return [];
+  }
+
+  const routineStartKey = getRoutineStartKey(task);
+  let anchorKey = stats.weekStartKey;
+  if (routineStartKey && compareDateKeys(routineStartKey, anchorKey) > 0) {
+    anchorKey = routineStartKey;
+  }
+  if (compareDateKeys(todayKey, stats.weekStartKey) >= 0 && compareDateKeys(todayKey, stats.weekEndKey) <= 0) {
+    anchorKey = maxDateKey(anchorKey, todayKey);
+  }
+
+  const completed = new Set(stats.doneDates);
+  const candidates = [];
+  let cursor = fromDateKey(stats.weekStartKey);
+  for (let index = 0; index < 7; index += 1) {
+    const candidateKey = toDateKey(cursor);
+    if (compareDateKeys(candidateKey, anchorKey) >= 0 && !completed.has(candidateKey)) {
+      candidates.push(candidateKey);
+    }
+    cursor = addDays(cursor, 1);
+  }
+  return candidates.slice(0, stats.remaining);
 }
 
 function getSelectedRepeatDays() {
@@ -1844,8 +1693,13 @@ async function requestNotifications() {
     toast("Este navegador no permite avisos.");
     return;
   }
-  const permission = await Notification.requestPermission();
+  if (!window.isSecureContext) {
+    toast("Los avisos necesitan HTTPS o la app instalada.");
+    return;
+  }
+  const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission === "granted") {
+    await ensureNotificationServiceWorker();
     toast("Avisos activados.");
     checkReminders();
   } else {
@@ -1853,50 +1707,101 @@ async function requestNotifications() {
   }
 }
 
-function checkReminders() {
+async function checkReminders() {
   if (!("Notification" in window) || Notification.permission !== "granted") {
     return;
   }
-  const now = new Date();
-  let changed = false;
-  state.tasks.forEach((task) => {
-    if (task.completed) {
-      return;
-    }
-
-    const reminder = getTaskReminderDate(task);
-    if (reminder) {
-      const minutes = (reminder.getTime() - now.getTime()) / 60000;
-      if (!task.reminderNotified && minutes <= 0 && minutes >= -24 * 60) {
-        new Notification(task.title, {
-          body: `${formatReminder(task)} · ${task.duration} min`,
-          icon: "./assets/icon.svg",
-        });
-        task.reminderNotified = true;
-        task.updatedAt = new Date().toISOString();
-        changed = true;
+  if (state.ui.reminderCheckRunning) {
+    return;
+  }
+  state.ui.reminderCheckRunning = true;
+  try {
+    const now = new Date();
+    let changed = false;
+    for (const task of state.tasks) {
+      if (task.completed || isPastCompletedRoutine(task)) {
+        continue;
       }
-      return;
-    }
 
-    if (task.notified || !task.dueDate || !task.dueTime) {
+      const reminder = getTaskReminderDate(task);
+      if (reminder) {
+        const minutes = (reminder.getTime() - now.getTime()) / 60000;
+        if (!task.reminderNotified && minutes <= 0 && minutes >= -24 * 60) {
+          const shown = await showTaskNotification(task, `${formatReminder(task)} · ${task.duration} min`, "reminder");
+          if (shown) {
+            task.reminderNotified = true;
+            task.updatedAt = new Date().toISOString();
+            changed = true;
+          }
+        }
+        continue;
+      }
+
+      if (task.notified || !task.dueDate || !task.dueTime) {
+        continue;
+      }
+      const due = getTaskDueDate(task);
+      const minutes = (due.getTime() - now.getTime()) / 60000;
+      if (minutes <= 10 && minutes >= -3) {
+        const shown = await showTaskNotification(task, `${formatDue(task)} · ${task.duration} min`, "due");
+        if (shown) {
+          task.notified = true;
+          task.updatedAt = new Date().toISOString();
+          changed = true;
+        }
+      }
+    }
+    if (!changed) {
       return;
     }
-    const due = getTaskDueDate(task);
-    const minutes = (due.getTime() - now.getTime()) / 60000;
-    if (minutes <= 10 && minutes >= -3) {
-      new Notification(task.title, {
-        body: `${formatDue(task)} · ${task.duration} min`,
-        icon: "./assets/icon.svg",
-      });
-      task.notified = true;
-      task.updatedAt = new Date().toISOString();
-      changed = true;
-    }
-  });
-  if (changed) {
     saveState();
     scheduleCloudSync();
+  } finally {
+    state.ui.reminderCheckRunning = false;
+  }
+}
+
+async function ensureNotificationServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return null;
+  }
+  try {
+    await navigator.serviceWorker.register("./service-worker.js");
+    return await navigator.serviceWorker.ready;
+  } catch {
+    return null;
+  }
+}
+
+async function showTaskNotification(task, body, kind) {
+  const options = {
+    body,
+    icon: "./assets/icon.svg",
+    badge: "./assets/icon.svg",
+    tag: `task-${task.id}-${kind}`,
+    renotify: true,
+    data: {
+      taskId: task.id,
+      url: `${window.location.pathname}${window.location.search}`,
+    },
+    vibrate: [80, 40, 80],
+  };
+
+  try {
+    const registration = await ensureNotificationServiceWorker();
+    if (registration?.showNotification) {
+      await registration.showNotification(task.title, options);
+      return true;
+    }
+  } catch {
+    // Fallback below for browsers that expose notifications but reject service-worker display.
+  }
+
+  try {
+    new Notification(task.title, options);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -2116,6 +2021,10 @@ function compareDue(a, b) {
 
 function compareDateKeys(a, b) {
   return fromDateKey(a) - fromDateKey(b);
+}
+
+function maxDateKey(a, b) {
+  return compareDateKeys(a, b) >= 0 ? a : b;
 }
 
 function diffDays(startKey, endKey) {

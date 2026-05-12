@@ -1,4 +1,4 @@
-const CACHE_NAME = "pulso-cache-v17";
+const CACHE_NAME = "pulso-cache-v18";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -54,6 +54,20 @@ self.addEventListener("fetch", (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
       });
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "./index.html";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const existingClient = clients.find((client) => client.url.includes(targetUrl));
+      if (existingClient) {
+        return existingClient.focus();
+      }
+      return self.clients.openWindow(targetUrl);
     }),
   );
 });

@@ -199,9 +199,7 @@ summary:focus-visible {
 .top-actions,
 .calendar-actions,
 .form-actions,
-.quick-controls,
-.cloud-actions,
-.focus-actions {
+.cloud-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -295,8 +293,7 @@ h3 {
 .icon-button,
 .primary-action,
 .ghost-action,
-.view-tab,
-.mood-chip {
+.view-tab {
   min-height: 40px;
   border-radius: var(--radius-sm);
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
@@ -313,8 +310,7 @@ h3 {
 
 .icon-button:hover,
 .ghost-action:hover,
-.view-tab:hover,
-.mood-chip:hover {
+.view-tab:hover {
   transform: translateY(-1px);
   border-color: rgba(104, 232, 255, 0.28);
 }
@@ -351,112 +347,6 @@ h3 {
   min-height: 36px;
 }
 
-.quick-controls {
-  align-items: stretch;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-.number-field {
-  display: grid;
-  grid-template-columns: auto 58px auto;
-  align-items: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.03);
-  font-size: 0.84rem;
-  font-weight: 750;
-}
-
-.number-field input {
-  width: 58px;
-  border: 0;
-  color: var(--ink);
-  background: transparent;
-  text-align: center;
-  font-weight: 850;
-}
-
-.mood-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-  margin-bottom: 12px;
-}
-
-.mood-chip {
-  min-width: 0;
-  padding: 0 8px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--line);
-  font-size: 0.84rem;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.mood-chip.active {
-  color: #031115;
-  background: var(--blue);
-  border-color: var(--blue);
-}
-
-.focus-result {
-  min-height: 146px;
-  padding: 14px;
-  border: 1px solid rgba(104, 232, 255, 0.22);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(135deg, rgba(104, 232, 255, 0.12), rgba(124, 255, 155, 0.055)),
-    rgba(255, 255, 255, 0.028);
-}
-
-.focus-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.focus-title strong {
-  display: block;
-  min-width: 0;
-  color: #ffffff;
-  font-size: 1.12rem;
-  line-height: 1.18;
-  overflow-wrap: anywhere;
-}
-
-.focus-score {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  height: 30px;
-  border: 1px solid rgba(77, 255, 210, 0.32);
-  border-radius: 999px;
-  color: var(--teal);
-  background: rgba(77, 255, 210, 0.08);
-  font-size: 0.8rem;
-  font-weight: 850;
-}
-
-.reason-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 12px;
-  padding: 0;
-  list-style: none;
-}
-
-.reason-list li,
-.tag-pill,
 .area-pill {
   display: inline-flex;
   align-items: center;
@@ -1064,6 +954,12 @@ h3 {
   border-color: rgba(124, 255, 155, 0.2);
 }
 
+.calendar-day.has-weekly-target {
+  background:
+    linear-gradient(180deg, rgba(124, 255, 155, 0.06), transparent),
+    rgba(255, 255, 255, 0.025);
+}
+
 .day-number {
   font-weight: 850;
 }
@@ -1091,6 +987,37 @@ h3 {
   color: #dfffe6;
   background: rgba(124, 255, 155, 0.14);
   text-decoration: line-through;
+}
+
+.day-routine {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 5px;
+  border: 1px dashed rgba(124, 255, 155, 0.26);
+  border-radius: 999px;
+  color: #dfffe6;
+  background: rgba(124, 255, 155, 0.08);
+  font-size: 0.66rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-routine.done {
+  border-style: solid;
+  background: rgba(124, 255, 155, 0.16);
+  text-decoration: line-through;
+}
+
+.routine-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--green);
 }
 
 .more-items {
@@ -1220,7 +1147,6 @@ svg {
     padding: 13px;
   }
 
-  .mood-grid,
   .field-grid,
   .auth-form,
   .stats-strip,
@@ -1269,8 +1195,7 @@ svg {
 @media (hover: none) {
   .icon-button:hover,
   .ghost-action:hover,
-  .view-tab:hover,
-  .mood-chip:hover {
+  .view-tab:hover {
     transform: none;
   }
 }
@@ -1295,7 +1220,6 @@ svg {
     min-height: 36px;
   }
 
-  .mood-grid,
   .field-grid,
   .auth-form,
   .stats-strip,

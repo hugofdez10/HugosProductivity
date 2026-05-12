@@ -1,7 +1,7 @@
 {
   "name": "Hugo's Productivity",
   "short_name": "Hugo",
-  "description": "Tareas, calendario, recordatorios y recomendación visual del siguiente paso.",
+  "description": "Tareas, calendario, rutinas y recordatorios personales.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
