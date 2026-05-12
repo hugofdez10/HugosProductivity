@@ -579,6 +579,62 @@ h3 {
   margin-bottom: 9px;
 }
 
+.routine-event-control {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 9px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.routine-event-fields {
+  display: grid;
+  grid-template-columns: minmax(112px, 0.75fr) minmax(0, 1.25fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.routine-event-list {
+  display: grid;
+  gap: 6px;
+}
+
+.routine-event-chip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 4px 5px 4px 9px;
+  border: 1px solid rgba(124, 255, 155, 0.18);
+  border-radius: var(--radius-sm);
+  background: rgba(124, 255, 155, 0.06);
+}
+
+.routine-event-chip span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.routine-event-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button.mini {
+  width: 30px;
+  min-height: 30px;
+}
+
 .form-actions {
   justify-content: flex-start;
 }
@@ -729,6 +785,12 @@ h3 {
   color: var(--teal);
   background: var(--teal-soft);
   border-color: rgba(77, 255, 210, 0.18);
+}
+
+.routine-event-pill {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: rgba(124, 255, 155, 0.2);
 }
 
 .reminder-pill {
@@ -1148,6 +1210,7 @@ svg {
   }
 
   .field-grid,
+  .routine-event-fields,
   .auth-form,
   .stats-strip,
   .lane-grid {
@@ -1221,6 +1284,7 @@ svg {
   }
 
   .field-grid,
+  .routine-event-fields,
   .auth-form,
   .stats-strip,
   .lane-grid {

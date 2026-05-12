@@ -20,6 +20,7 @@ const state = {
     searchTimer: null,
     renderFrame: null,
     reminderCheckRunning: false,
+    routineEventsDraft: [],
   },
   sync: {
     client: null,
@@ -93,6 +94,11 @@ function cacheElements() {
     "weekdayPicker",
     "weeklyTargetControl",
     "taskWeeklyTarget",
+    "routineEventControl",
+    "routineEventDate",
+    "routineEventType",
+    "addRoutineEventBtn",
+    "routineEventList",
     "taskNotes",
     "submitLabel",
     "cancelEditBtn",
@@ -148,6 +154,14 @@ function bindEvents() {
 
   els.taskRepeat.addEventListener("change", () => {
     syncWeekdayPickerState();
+  });
+  els.addRoutineEventBtn.addEventListener("click", addRoutineEventFromForm);
+  els.routineEventList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-routine-event-remove]");
+    if (!button) {
+      return;
+    }
+    removeRoutineEvent(button.dataset.routineEventRemove);
   });
 
   els.cancelEditBtn.addEventListener("click", resetForm);
@@ -597,7 +611,7 @@ function renderCalendar() {
         <span class="day-number">${date.getDate()}</span>
         <span class="day-items">
           ${visibleNormalItems.map((item) => `<span class="day-item ${item.completed ? "done" : ""}">${escapeHtml(item.task.title)}</span>`).join("")}
-          ${weeklyTargetItems.slice(0, 3).map((item) => `<span class="day-routine ${item.completed ? "done" : ""}"><span class="routine-dot" aria-hidden="true"></span>${escapeHtml(item.task.title)} ${item.progress}</span>`).join("")}
+          ${weeklyTargetItems.slice(0, 3).map((item) => `<span class="day-routine ${item.completed ? "done" : ""}"><span class="routine-dot" aria-hidden="true"></span>${escapeHtml(item.label)} ${item.progress}</span>`).join("")}
           ${totalItems > 3 ? `<span class="more-items">+${totalItems - 3}</span>` : ""}
         </span>
       </button>
@@ -629,6 +643,7 @@ function getCalendarBuckets(dateKeys) {
             bucket.weeklyTargets.push({
               task,
               completed,
+              label: formatRoutineOccurrenceTitle(task, dateKey),
               progress: `${stats.done}/${stats.target}`,
             });
           }
@@ -794,6 +809,7 @@ function scheduleCardTemplate(entry) {
   const areaClass = `area-${task.area || "personal"}`;
   const recurring = isRecurringTask(task);
   const reminder = formatReminder(task);
+  const routineEvent = getRoutineEventForDate(task, dateKey);
   const actionButtons = isDone
     ? `
       <button class="icon-button" type="button" data-action="restore" title="Reabrir" aria-label="Reabrir"><i data-lucide="rotate-ccw" aria-hidden="true"></i></button>
@@ -815,11 +831,12 @@ function scheduleCardTemplate(entry) {
         <i data-lucide="${isDone ? "check" : "circle"}" aria-hidden="true"></i>
       </button>
       <div class="task-main">
-        <p class="task-name">${escapeHtml(task.title)}</p>
+        <p class="task-name">${escapeHtml(formatRoutineOccurrenceTitle(task, dateKey))}</p>
         <div class="task-meta">
           <span>${task.duration} min</span>
           <span>${capitalize(task.energy)}</span>
           ${task.repeat !== "none" ? `<span class="${recurring ? "routine-badge" : ""}">${formatRepeat(task)}</span>` : ""}
+          ${routineEvent ? `<span class="routine-event-pill">${escapeHtml(routineEvent.title)}</span>` : ""}
           ${reminder ? `<span class="reminder-pill">${reminder}</span>` : ""}
         </div>
       </div>
@@ -839,6 +856,7 @@ function taskCardTemplate(task, compact = false, occurrenceDate = "") {
   const areaClass = `area-${task.area || "personal"}`;
   const note = !compact && task.notes ? `<p class="task-note">${escapeHtml(task.notes)}</p>` : "";
   const recurring = isRecurringTask(task);
+  const routineEvent = getRoutineEventForDate(task, occurrenceDate || getTaskDisplayDate(task));
   const actionButtons = isDone
     ? `
       <button class="icon-button" type="button" data-action="restore" title="Reabrir" aria-label="Reabrir"><i data-lucide="rotate-ccw" aria-hidden="true"></i></button>
@@ -856,13 +874,14 @@ function taskCardTemplate(task, compact = false, occurrenceDate = "") {
         <i data-lucide="${isDone ? "check" : "circle"}" aria-hidden="true"></i>
       </button>
       <div class="task-main">
-        <p class="task-name">${escapeHtml(task.title)}</p>
+        <p class="task-name">${escapeHtml(formatRoutineOccurrenceTitle(task, occurrenceDate || getTaskDisplayDate(task)))}</p>
         <div class="task-meta">
           <span>${due}</span>
           <span>${task.duration} min</span>
           <span>${capitalize(task.energy)}</span>
           <span>${formatPlace(task.place)}</span>
           ${task.repeat !== "none" ? `<span class="${recurring ? "routine-badge" : ""}">${formatRepeat(task)}</span>` : ""}
+          ${routineEvent ? `<span class="routine-event-pill">${escapeHtml(routineEvent.title)}</span>` : ""}
           ${reminder ? `<span class="reminder-pill">${reminder}</span>` : ""}
         </div>
         <div class="task-tags">
@@ -919,6 +938,7 @@ function upsertTaskFromForm() {
     repeat: els.taskRepeat.value,
     repeatDays,
     weeklyTarget,
+    routineEvents: els.taskRepeat.value === "weeklyTarget" ? state.ui.routineEventsDraft : [],
     notes: els.taskNotes.value.trim(),
     completed: false,
     doneDates: existingTask?.doneDates || [],
@@ -1017,6 +1037,8 @@ function editTask(taskId) {
   els.taskArea.value = task.area;
   els.taskRepeat.value = task.repeat;
   els.taskWeeklyTarget.value = task.weeklyTarget || 4;
+  state.ui.routineEventsDraft = normalizeRoutineEvents(task.routineEvents || []);
+  renderRoutineEventsDraft();
   els.taskNotes.value = task.notes;
   setSelectedRepeatDays(task.repeatDays || []);
   syncWeekdayPickerState();
@@ -1083,10 +1105,64 @@ function resetForm() {
   els.taskArea.value = "personal";
   els.taskRepeat.value = "none";
   els.taskWeeklyTarget.value = 4;
+  state.ui.routineEventsDraft = [];
+  els.routineEventDate.value = "";
+  els.routineEventType.value = "";
+  renderRoutineEventsDraft();
   setSelectedRepeatDays([]);
   syncWeekdayPickerState();
   els.submitLabel.textContent = "Añadir";
   els.cancelEditBtn.hidden = true;
+}
+
+function addRoutineEventFromForm() {
+  const date = els.routineEventDate.value || state.filters.selectedDate || toDateKey(new Date());
+  const title = els.routineEventType.value.trim();
+  if (!title) {
+    els.routineEventType.focus();
+    return;
+  }
+  const existing = state.ui.routineEventsDraft.find((event) => event.date === date);
+  if (existing) {
+    existing.title = title;
+  } else {
+    state.ui.routineEventsDraft.push({
+      id: crypto.randomUUID(),
+      date,
+      title,
+    });
+  }
+  state.ui.routineEventsDraft = normalizeRoutineEvents(state.ui.routineEventsDraft);
+  els.routineEventDate.value = "";
+  els.routineEventType.value = "";
+  renderRoutineEventsDraft();
+}
+
+function removeRoutineEvent(eventId) {
+  state.ui.routineEventsDraft = state.ui.routineEventsDraft.filter((event) => event.id !== eventId);
+  renderRoutineEventsDraft();
+}
+
+function renderRoutineEventsDraft() {
+  if (!els.routineEventList) {
+    return;
+  }
+  if (!state.ui.routineEventsDraft.length) {
+    els.routineEventList.innerHTML = `<p class="empty-copy compact">Sin eventos vinculados.</p>`;
+    return;
+  }
+  els.routineEventList.innerHTML = state.ui.routineEventsDraft
+    .map((event) => `
+      <div class="routine-event-chip">
+        <span>${formatDateKey(event.date)}</span>
+        <strong>${escapeHtml(event.title)}</strong>
+        <button class="icon-button mini" type="button" data-routine-event-remove="${event.id}" title="Quitar evento" aria-label="Quitar evento">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </div>
+    `)
+    .join("");
+  refreshIcons();
 }
 
 function normalizeReminderInput(dateValue, timeValue, fallbackDate = "") {
@@ -1166,6 +1242,9 @@ function getCompletedTasksForDate(dateKey) {
 }
 
 function getTaskCompletedDateKey(task) {
+  if (task.dueDate) {
+    return task.dueDate;
+  }
   const completedAt = getTaskCompletedAt(task);
   return completedAt ? toDateKey(completedAt) : "";
 }
@@ -1201,6 +1280,9 @@ function isRecurringTaskOnDate(task, dateKey) {
     return false;
   }
   if (task.repeat === "weeklyTarget") {
+    if (getRoutineEventForDate(task, dateKey)) {
+      return true;
+    }
     return shouldSuggestWeeklyTargetOnDate(task, dateKey);
   }
   return task.repeatDays.includes(getIsoWeekday(fromDateKey(dateKey)));
@@ -1268,12 +1350,14 @@ function getWeeklyTargetStats(task, dateKey) {
   const doneDates = (task.doneDates || []).filter((doneDate) => {
     return compareDateKeys(doneDate, weekStartKey) >= 0 && compareDateKeys(doneDate, weekEndKey) <= 0;
   });
+  const routineEvents = getRoutineEventsForRange(task, weekStartKey, weekEndKey);
   const remaining = Math.max(0, target - doneDates.length);
   const daysLeft = Math.max(1, diffDays(dateKey, weekEndKey) + 1);
   return {
     target,
     done: doneDates.length,
     doneDates,
+    routineEvents,
     remaining,
     daysLeft,
     weekStartKey,
@@ -1284,7 +1368,7 @@ function getWeeklyTargetStats(task, dateKey) {
 function getScheduledWeeklyTargetDates(task, dateKey) {
   const stats = getWeeklyTargetStats(task, dateKey);
   if (stats.remaining <= 0) {
-    return [];
+    return stats.routineEvents.map((event) => event.date);
   }
 
   const todayKey = toDateKey(new Date());
@@ -1302,16 +1386,42 @@ function getScheduledWeeklyTargetDates(task, dateKey) {
   }
 
   const completed = new Set(stats.doneDates);
+  const explicitDates = stats.routineEvents
+    .map((event) => event.date)
+    .filter((eventDate) => compareDateKeys(eventDate, anchorKey) >= 0 && !completed.has(eventDate));
+  const explicitDateSet = new Set(explicitDates);
   const candidates = [];
   let cursor = fromDateKey(stats.weekStartKey);
   for (let index = 0; index < 7; index += 1) {
     const candidateKey = toDateKey(cursor);
-    if (compareDateKeys(candidateKey, anchorKey) >= 0 && !completed.has(candidateKey)) {
+    if (compareDateKeys(candidateKey, anchorKey) >= 0 && !completed.has(candidateKey) && !explicitDateSet.has(candidateKey)) {
       candidates.push(candidateKey);
     }
     cursor = addDays(cursor, 1);
   }
-  return candidates.slice(0, stats.remaining);
+  const autoSlots = Math.max(0, stats.remaining - explicitDates.length);
+  return [...explicitDates, ...candidates.slice(0, autoSlots)].sort(compareDateKeys);
+}
+
+function getRoutineEventForDate(task, dateKey) {
+  if (!dateKey || task.repeat !== "weeklyTarget") {
+    return null;
+  }
+  return (task.routineEvents || []).find((event) => event.date === dateKey) || null;
+}
+
+function getRoutineEventsForRange(task, startKey, endKey) {
+  return (task.routineEvents || []).filter((event) => {
+    return compareDateKeys(event.date, startKey) >= 0 && compareDateKeys(event.date, endKey) <= 0;
+  });
+}
+
+function formatRoutineOccurrenceTitle(task, dateKey = "") {
+  const routineEvent = getRoutineEventForDate(task, dateKey);
+  if (!routineEvent) {
+    return task.title;
+  }
+  return `${task.title} · ${routineEvent.title}`;
 }
 
 function getSelectedRepeatDays() {
@@ -1335,6 +1445,10 @@ function syncWeekdayPickerState() {
   const weeklyTargetEnabled = els.taskRepeat.value === "weeklyTarget";
   els.weekdayPicker.hidden = !weekdaysEnabled;
   els.weeklyTargetControl.hidden = !weeklyTargetEnabled;
+  els.routineEventControl.hidden = !weeklyTargetEnabled;
+  if (weeklyTargetEnabled && !els.routineEventDate.value) {
+    els.routineEventDate.value = state.filters.selectedDate || toDateKey(new Date());
+  }
   if (weekdaysEnabled && !getSelectedRepeatDays().length) {
     setSelectedRepeatDays([getIsoWeekday(fromDateKey(state.filters.selectedDate || toDateKey(new Date())))]);
   }
@@ -1903,6 +2017,7 @@ function normalizeTask(task) {
       ? [...new Set(task.repeatDays.map(Number).filter((day) => day >= 1 && day <= 7))].sort((a, b) => a - b)
       : [],
     weeklyTarget: clampNumber(task.weeklyTarget, 1, 7, 4),
+    routineEvents: normalizeRoutineEvents(task.routineEvents || []),
     notes: task.notes || "",
     completed: Boolean(task.completed),
     completedAt: task.completedAt || "",
@@ -1914,12 +2029,30 @@ function normalizeTask(task) {
   };
 }
 
+function normalizeRoutineEvents(events) {
+  const byDate = new Map();
+  (Array.isArray(events) ? events : []).forEach((event) => {
+    const date = String(event?.date || "").trim();
+    const title = String(event?.title || event?.type || "").trim();
+    if (!date || !title || !isValidDateKey(date)) {
+      return;
+    }
+    byDate.set(date, {
+      id: event.id || crypto.randomUUID(),
+      date,
+      title: title.slice(0, 40),
+    });
+  });
+  return [...byDate.values()].sort((a, b) => compareDateKeys(a.date, b.date));
+}
+
 function matchesQuery(task) {
   const query = state.filters.query;
   if (!query) {
     return true;
   }
-  return `${task.title} ${task.notes} ${task.area} ${task.place} ${task.energy}`.toLowerCase().includes(query);
+  const routineEvents = (task.routineEvents || []).map((event) => event.title).join(" ");
+  return `${task.title} ${task.notes} ${task.area} ${task.place} ${task.energy} ${routineEvents}`.toLowerCase().includes(query);
 }
 
 function getTaskDueDate(task, dateKey = "") {
@@ -2051,6 +2184,14 @@ function toDateKey(date) {
 function fromDateKey(key) {
   const [year, month, day] = key.split("-").map(Number);
   return new Date(year, month - 1, day);
+}
+
+function isValidDateKey(key) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(key || ""))) {
+    return false;
+  }
+  const date = fromDateKey(key);
+  return toDateKey(date) === key;
 }
 
 function startOfDay(date) {

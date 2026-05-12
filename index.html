@@ -210,6 +210,30 @@
                 <input id="taskWeeklyTarget" type="number" min="1" max="7" step="1" value="4" />
               </label>
 
+              <div class="routine-event-control" id="routineEventControl" hidden>
+                <div class="routine-event-fields">
+                  <label>
+                    <span>Día</span>
+                    <input id="routineEventDate" type="date" />
+                  </label>
+                  <label>
+                    <span>Evento</span>
+                    <input id="routineEventType" type="text" list="routineEventOptions" placeholder="Pádel, fútbol, gym..." maxlength="40" />
+                    <datalist id="routineEventOptions">
+                      <option value="Pádel"></option>
+                      <option value="Fútbol"></option>
+                      <option value="Gym"></option>
+                      <option value="Correr"></option>
+                      <option value="Piscina"></option>
+                    </datalist>
+                  </label>
+                  <button class="icon-button" id="addRoutineEventBtn" type="button" title="Añadir evento" aria-label="Añadir evento">
+                    <i data-lucide="plus" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="routine-event-list" id="routineEventList"></div>
+              </div>
+
               <label>
                 <span>Notas</span>
                 <textarea id="taskNotes" rows="3" placeholder="Detalles, etiquetas o enlaces"></textarea>
