@@ -9,6 +9,24 @@ const DEFAULT_FILTERS = {
   sort: "smart",
   selectedDate: toDateKey(new Date()),
 };
+const TASK_AREAS = ["personal", "estudio", "trabajo", "salud", "deporte", "casa", "creativo"];
+const SPORT_AREA = "deporte";
+const SPORT_DONE_EMOJI = "🏋️";
+const SPORT_KEYWORDS = [
+  "deporte",
+  "padel",
+  "futbol",
+  "gym",
+  "gimnasio",
+  "correr",
+  "running",
+  "piscina",
+  "natacion",
+  "tenis",
+  "baloncesto",
+  "basket",
+];
+const ROUTINE_EVENT_REPEATS = ["weekdays", "weeklyTarget"];
 
 const state = {
   tasks: [],
@@ -21,6 +39,8 @@ const state = {
     renderFrame: null,
     reminderCheckRunning: false,
     routineEventsDraft: [],
+    expandedCalendarOpen: false,
+    expandedCalendarMode: "day",
   },
   sync: {
     client: null,
@@ -115,6 +135,11 @@ function cacheElements() {
     "calendarSection",
     "calendarTitle",
     "calendarGrid",
+    "expandCalendarBtn",
+    "expandedCalendar",
+    "expandedCalendarTitle",
+    "expandedCalendarTimeline",
+    "closeExpandedCalendarBtn",
     "prevMonthBtn",
     "nextMonthBtn",
     "todayBtn",
@@ -155,6 +180,12 @@ function bindEvents() {
   els.taskRepeat.addEventListener("change", () => {
     syncWeekdayPickerState();
   });
+  els.taskArea?.addEventListener("change", () => {
+    syncWeekdayPickerState();
+  });
+  els.taskTitle.addEventListener("input", () => {
+    syncWeekdayPickerState();
+  });
   els.addRoutineEventBtn.addEventListener("click", addRoutineEventFromForm);
   els.routineEventList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-routine-event-remove]");
@@ -177,6 +208,30 @@ function bindEvents() {
   els.nextMonthBtn.addEventListener("click", () => {
     state.currentMonth = addMonths(state.currentMonth, 1);
     render();
+  });
+
+  els.expandCalendarBtn.addEventListener("click", openExpandedCalendar);
+  els.closeExpandedCalendarBtn.addEventListener("click", closeExpandedCalendar);
+  els.expandedCalendar.addEventListener("click", (event) => {
+    const modeButton = event.target.closest("[data-expanded-calendar-mode]");
+    if (modeButton) {
+      state.ui.expandedCalendarMode = modeButton.dataset.expandedCalendarMode;
+      renderExpandedCalendar();
+      refreshIcons();
+      return;
+    }
+    const dateButton = event.target.closest("[data-expanded-date]");
+    if (dateButton) {
+      state.filters.selectedDate = dateButton.dataset.expandedDate;
+      state.currentMonth = startOfMonth(fromDateKey(state.filters.selectedDate));
+      state.ui.expandedCalendarMode = "day";
+      saveState();
+      render();
+      return;
+    }
+    if (event.target === els.expandedCalendar) {
+      closeExpandedCalendar();
+    }
   });
 
   els.todayBtn.addEventListener("click", () => {
@@ -213,6 +268,11 @@ function bindEvents() {
     if (document.visibilityState === "visible") {
       syncNow({ silent: true });
       checkReminders();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.ui.expandedCalendarOpen) {
+      closeExpandedCalendar();
     }
   });
   window.addEventListener("focus", () => checkReminders());
@@ -344,6 +404,7 @@ function render() {
   renderDayPlan();
   renderTaskBoard();
   renderCalendar();
+  renderExpandedCalendar();
   refreshIcons();
 }
 
@@ -610,8 +671,8 @@ function renderCalendar() {
       <button class="${classes}" type="button" data-date="${key}">
         <span class="day-number">${date.getDate()}</span>
         <span class="day-items">
-          ${visibleNormalItems.map((item) => `<span class="day-item ${item.completed ? "done" : ""}">${escapeHtml(item.task.title)}</span>`).join("")}
-          ${weeklyTargetItems.slice(0, 3).map((item) => `<span class="day-routine ${item.completed ? "done" : ""}"><span class="routine-dot" aria-hidden="true"></span>${escapeHtml(item.label)} ${item.progress}</span>`).join("")}
+          ${visibleNormalItems.map((item) => calendarTaskItemTemplate(item, key)).join("")}
+          ${weeklyTargetItems.slice(0, 3).map((item) => calendarRoutineItemTemplate(item, key)).join("")}
           ${totalItems > 3 ? `<span class="more-items">+${totalItems - 3}</span>` : ""}
         </span>
       </button>
@@ -619,6 +680,169 @@ function renderCalendar() {
   }).join("");
 
   els.calendarGrid.innerHTML = dayHeaders + dayButtons;
+}
+
+function renderExpandedCalendar() {
+  if (!els.expandedCalendar) {
+    return;
+  }
+  els.expandedCalendar.hidden = !state.ui.expandedCalendarOpen;
+  if (!state.ui.expandedCalendarOpen) {
+    return;
+  }
+
+  const dateKey = state.filters.selectedDate || toDateKey(new Date());
+  document.querySelectorAll("[data-expanded-calendar-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.expandedCalendarMode === state.ui.expandedCalendarMode);
+  });
+  if (state.ui.expandedCalendarMode === "week") {
+    renderExpandedCalendarWeek(dateKey);
+    return;
+  }
+  if (state.ui.expandedCalendarMode === "month") {
+    renderExpandedCalendarMonth(dateKey);
+    return;
+  }
+  renderExpandedCalendarDay(dateKey);
+}
+
+function renderExpandedCalendarDay(dateKey) {
+  const pendingEntries = buildDaySchedule(getTasksForDate(dateKey).filter(matchesQuery), dateKey);
+  const completedEntries = buildCompletedSchedule(getCompletedTasksForDate(dateKey).filter(matchesQuery), dateKey);
+  const entries = [...pendingEntries, ...completedEntries].sort((a, b) => a.startMinutes - b.startMinutes);
+  els.expandedCalendarTitle.textContent = formatDateKey(dateKey);
+
+  if (!entries.length) {
+    els.expandedCalendarTimeline.innerHTML = `
+      <div class="expanded-empty">
+        <strong>Sin bloques</strong>
+        <span>No hay nada marcado para este día.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const entryHours = entries.map((entry) => Math.floor(entry.startMinutes / 60));
+  const firstHour = Math.min(6, ...entryHours);
+  const lastHour = Math.max(23, ...entryHours);
+  const rows = [];
+  for (let hour = firstHour; hour <= lastHour; hour += 1) {
+    const hourEntries = entries.filter((entry) => Math.floor(entry.startMinutes / 60) === hour);
+    rows.push(`
+      <div class="timeline-hour">
+        <div class="timeline-time">${String(hour).padStart(2, "0")}:00</div>
+        <div class="timeline-slot">
+          ${hourEntries.map(expandedCalendarEntryTemplate).join("")}
+        </div>
+      </div>
+    `);
+  }
+  els.expandedCalendarTimeline.innerHTML = rows.join("");
+}
+
+function renderExpandedCalendarWeek(dateKey) {
+  const weekStart = startOfWeek(fromDateKey(dateKey));
+  const days = Array.from({ length: 7 }, (_, index) => toDateKey(addDays(weekStart, index)));
+  els.expandedCalendarTitle.textContent = `Semana de ${formatDateKey(days[0])}`;
+  els.expandedCalendarTimeline.innerHTML = `
+    <div class="expanded-week">
+      ${days
+        .map((dayKey) => {
+          const entries = getExpandedEntriesForDate(dayKey);
+          return `
+            <button class="expanded-week-day ${dayKey === dateKey ? "selected" : ""}" type="button" data-expanded-date="${dayKey}">
+              <span>${formatShortWeekday(dayKey)}</span>
+              <strong>${fromDateKey(dayKey).getDate()}</strong>
+            </button>
+            <div class="expanded-week-list ${dayKey === dateKey ? "selected" : ""}">
+              ${entries.length ? entries.map(expandedCalendarEntryTemplate).join("") : `<p class="expanded-muted">Sin bloques</p>`}
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderExpandedCalendarMonth(dateKey) {
+  const monthStart = startOfMonth(fromDateKey(dateKey));
+  const calendarStart = startOfWeek(monthStart);
+  const days = Array.from({ length: 42 }, (_, index) => addDays(calendarStart, index));
+  const buckets = getCalendarBuckets(days.map(toDateKey));
+  els.expandedCalendarTitle.textContent = capitalize(new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric" }).format(monthStart));
+  els.expandedCalendarTimeline.innerHTML = `
+    <div class="expanded-month">
+      ${["L", "M", "X", "J", "V", "S", "D"].map((day) => `<div class="expanded-month-weekday">${day}</div>`).join("")}
+      ${days
+        .map((date) => {
+          const key = toDateKey(date);
+          const bucket = buckets.get(key) || { pending: [], completed: [], weeklyTargets: [] };
+          const items = [
+            ...bucket.pending.map((task) => ({ task, completed: false })),
+            ...bucket.completed.map((task) => ({ task, completed: true })),
+          ];
+          const routines = bucket.weeklyTargets;
+          const outside = date.getMonth() !== monthStart.getMonth();
+          return `
+            <button class="expanded-month-day ${outside ? "outside" : ""} ${key === dateKey ? "selected" : ""}" type="button" data-expanded-date="${key}">
+              <span class="day-number">${date.getDate()}</span>
+              <span class="day-items">
+                ${items.slice(0, Math.max(0, 5 - routines.length)).map((item) => calendarTaskItemTemplate(item, key)).join("")}
+                ${routines.slice(0, 5).map((item) => calendarRoutineItemTemplate(item, key)).join("")}
+              </span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function getExpandedEntriesForDate(dateKey) {
+  const pendingEntries = buildDaySchedule(getTasksForDate(dateKey).filter(matchesQuery), dateKey);
+  const completedEntries = buildCompletedSchedule(getCompletedTasksForDate(dateKey).filter(matchesQuery), dateKey);
+  return [...pendingEntries, ...completedEntries].sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
+function expandedCalendarEntryTemplate(entry) {
+  const { task, dateKey } = entry;
+  const isDone = entry.completedHistory || isTaskCompletedForDate(task, dateKey);
+  const routineEvent = getRoutineEventForDate(task, dateKey);
+  const status = isDone ? "Hecha" : entry.kind;
+  return `
+    <article class="timeline-entry ${isDone ? "done" : ""}">
+      <div class="timeline-entry-time">
+        <strong>${entry.label}</strong>
+        <span>${escapeHtml(status)}</span>
+      </div>
+      <div class="timeline-entry-main">
+        <p>${escapeHtml(formatRoutineOccurrenceTitle(task, dateKey))}</p>
+        <div>
+          <span>${task.duration} min</span>
+          ${task.repeat !== "none" ? `<span>${formatRepeat(task)}</span>` : ""}
+          ${routineEvent ? `<span>${escapeHtml(routineEvent.title)}</span>` : ""}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function openExpandedCalendar() {
+  if (isMobilePortrait()) {
+    toast("Pon el móvil en horizontal para ver mejor el calendario por horas.");
+  }
+  state.ui.expandedCalendarOpen = true;
+  renderExpandedCalendar();
+  refreshIcons();
+}
+
+function closeExpandedCalendar() {
+  state.ui.expandedCalendarOpen = false;
+  renderExpandedCalendar();
+}
+
+function isMobilePortrait() {
+  return Boolean(window.matchMedia?.("(max-width: 760px) and (orientation: portrait)")?.matches);
 }
 
 function getCalendarBuckets(dateKeys) {
@@ -639,7 +863,7 @@ function getCalendarBuckets(dateKeys) {
         if (task.repeat === "weeklyTarget") {
           const stats = getWeeklyTargetStats(task, dateKey);
           const completed = (task.doneDates || []).includes(dateKey);
-          if (completed || isRecurringTaskOnDate(task, dateKey)) {
+          if (completed || (!isSportTask(task) && isRecurringTaskOnDate(task, dateKey))) {
             bucket.weeklyTargets.push({
               task,
               completed,
@@ -651,14 +875,14 @@ function getCalendarBuckets(dateKeys) {
         }
         if ((task.doneDates || []).includes(dateKey)) {
           bucket.completed.push(task);
-        } else if (isRecurringTaskOnDate(task, dateKey)) {
+        } else if (!isSportTask(task) && isRecurringTaskOnDate(task, dateKey)) {
           bucket.pending.push(task);
         }
       });
       return;
     }
 
-    if (!task.completed && dateKeySet.has(task.dueDate)) {
+    if (!task.completed && dateKeySet.has(task.dueDate) && !isSportTask(task)) {
       buckets.get(task.dueDate)?.pending.push(task);
       return;
     }
@@ -670,6 +894,20 @@ function getCalendarBuckets(dateKeys) {
   });
 
   return buckets;
+}
+
+function calendarTaskItemTemplate(item, dateKey) {
+  const sportDone = item.completed && isSportTask(item.task);
+  const label = sportDone ? SPORT_DONE_EMOJI : formatRoutineOccurrenceTitle(item.task, dateKey);
+  const title = sportDone ? `Deporte completado: ${formatRoutineOccurrenceTitle(item.task, dateKey)}` : label;
+  return `<span class="day-item ${item.completed ? "done" : ""} ${sportDone ? "sport-done" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
+function calendarRoutineItemTemplate(item, dateKey) {
+  const sportDone = item.completed && isSportTask(item.task);
+  const label = sportDone ? SPORT_DONE_EMOJI : `${item.label} ${item.progress}`;
+  const title = sportDone ? `Deporte completado: ${item.label} ${item.progress}` : label;
+  return `<span class="day-routine ${item.completed ? "done" : ""} ${sportDone ? "sport-done" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><span class="routine-dot" aria-hidden="true"></span>${escapeHtml(label)}</span>`;
 }
 
 function getVisibleTasks() {
@@ -834,7 +1072,6 @@ function scheduleCardTemplate(entry) {
         <p class="task-name">${escapeHtml(formatRoutineOccurrenceTitle(task, dateKey))}</p>
         <div class="task-meta">
           <span>${task.duration} min</span>
-          <span>${capitalize(task.energy)}</span>
           ${task.repeat !== "none" ? `<span class="${recurring ? "routine-badge" : ""}">${formatRepeat(task)}</span>` : ""}
           ${routineEvent ? `<span class="routine-event-pill">${escapeHtml(routineEvent.title)}</span>` : ""}
           ${reminder ? `<span class="reminder-pill">${reminder}</span>` : ""}
@@ -878,14 +1115,11 @@ function taskCardTemplate(task, compact = false, occurrenceDate = "") {
         <div class="task-meta">
           <span>${due}</span>
           <span>${task.duration} min</span>
-          <span>${capitalize(task.energy)}</span>
-          <span>${formatPlace(task.place)}</span>
           ${task.repeat !== "none" ? `<span class="${recurring ? "routine-badge" : ""}">${formatRepeat(task)}</span>` : ""}
           ${routineEvent ? `<span class="routine-event-pill">${escapeHtml(routineEvent.title)}</span>` : ""}
           ${reminder ? `<span class="reminder-pill">${reminder}</span>` : ""}
         </div>
         <div class="task-tags">
-          <span class="area-pill">${capitalize(task.area)}</span>
           ${priorityDots(task.importance)}
         </div>
         ${note}
@@ -932,13 +1166,13 @@ function upsertTaskFromForm() {
     reminderTime: reminder.time,
     duration: clampNumber(els.taskDuration.value, 5, 480, 30),
     importance: clampNumber(els.taskImportance.value, 1, 5, 3),
-    energy: els.taskEnergy.value,
-    place: els.taskPlace.value,
-    area: els.taskArea.value,
+    energy: getOptionalControlValue(els.taskEnergy, existingTask?.energy || "media"),
+    place: getOptionalControlValue(els.taskPlace, existingTask?.place || "donde"),
+    area: getFormTaskArea(existingTask),
     repeat: els.taskRepeat.value,
     repeatDays,
     weeklyTarget,
-    routineEvents: els.taskRepeat.value === "weeklyTarget" ? state.ui.routineEventsDraft : [],
+    routineEvents: repeatAllowsRoutineEvents(els.taskRepeat.value) ? state.ui.routineEventsDraft : [],
     notes: els.taskNotes.value.trim(),
     completed: false,
     doneDates: existingTask?.doneDates || [],
@@ -1032,9 +1266,9 @@ function editTask(taskId) {
   els.taskReminderTime.value = task.reminderTime || "";
   els.taskDuration.value = task.duration;
   els.taskImportance.value = task.importance;
-  els.taskEnergy.value = task.energy;
-  els.taskPlace.value = task.place;
-  els.taskArea.value = task.area;
+  setOptionalControlValue(els.taskEnergy, task.energy);
+  setOptionalControlValue(els.taskPlace, task.place);
+  setOptionalControlValue(els.taskArea, task.area);
   els.taskRepeat.value = task.repeat;
   els.taskWeeklyTarget.value = task.weeklyTarget || 4;
   state.ui.routineEventsDraft = normalizeRoutineEvents(task.routineEvents || []);
@@ -1100,9 +1334,9 @@ function resetForm() {
   els.taskReminderDate.value = "";
   els.taskReminderTime.value = "";
   els.taskImportance.value = 3;
-  els.taskEnergy.value = "media";
-  els.taskPlace.value = "donde";
-  els.taskArea.value = "personal";
+  setOptionalControlValue(els.taskEnergy, "media");
+  setOptionalControlValue(els.taskPlace, "donde");
+  setOptionalControlValue(els.taskArea, "personal");
   els.taskRepeat.value = "none";
   els.taskWeeklyTarget.value = 4;
   state.ui.routineEventsDraft = [];
@@ -1113,6 +1347,29 @@ function resetForm() {
   syncWeekdayPickerState();
   els.submitLabel.textContent = "Añadir";
   els.cancelEditBtn.hidden = true;
+}
+
+function getOptionalControlValue(control, fallback = "") {
+  return control ? control.value : fallback;
+}
+
+function setOptionalControlValue(control, value) {
+  if (control) {
+    control.value = value;
+  }
+}
+
+function getFormTaskArea(existingTask) {
+  const explicitArea = getOptionalControlValue(els.taskArea, "");
+  if (explicitArea) {
+    return explicitArea;
+  }
+  const routineEventText = state.ui.routineEventsDraft.map((event) => event.title).join(" ");
+  const draftText = `${els.taskTitle?.value || ""} ${els.taskNotes?.value || ""} ${routineEventText}`;
+  if (isSportLikeText(draftText)) {
+    return SPORT_AREA;
+  }
+  return existingTask?.area || "personal";
 }
 
 function addRoutineEventFromForm() {
@@ -1404,7 +1661,7 @@ function getScheduledWeeklyTargetDates(task, dateKey) {
 }
 
 function getRoutineEventForDate(task, dateKey) {
-  if (!dateKey || task.repeat !== "weeklyTarget") {
+  if (!dateKey || !repeatAllowsRoutineEvents(task.repeat)) {
     return null;
   }
   return (task.routineEvents || []).find((event) => event.date === dateKey) || null;
@@ -1419,6 +1676,9 @@ function getRoutineEventsForRange(task, startKey, endKey) {
 function formatRoutineOccurrenceTitle(task, dateKey = "") {
   const routineEvent = getRoutineEventForDate(task, dateKey);
   if (!routineEvent) {
+    return task.title;
+  }
+  if (normalizeTextForMatch(task.title) === normalizeTextForMatch(routineEvent.title)) {
     return task.title;
   }
   return `${task.title} · ${routineEvent.title}`;
@@ -1443,15 +1703,28 @@ function syncWeekdayPickerState() {
   }
   const weekdaysEnabled = els.taskRepeat.value === "weekdays";
   const weeklyTargetEnabled = els.taskRepeat.value === "weeklyTarget";
+  const routineEventsEnabled = weeklyTargetEnabled || (weekdaysEnabled && (isSportFormDraft() || state.ui.routineEventsDraft.length > 0));
   els.weekdayPicker.hidden = !weekdaysEnabled;
   els.weeklyTargetControl.hidden = !weeklyTargetEnabled;
-  els.routineEventControl.hidden = !weeklyTargetEnabled;
-  if (weeklyTargetEnabled && !els.routineEventDate.value) {
+  els.routineEventControl.hidden = !routineEventsEnabled;
+  if (routineEventsEnabled && !els.routineEventDate.value) {
     els.routineEventDate.value = state.filters.selectedDate || toDateKey(new Date());
   }
   if (weekdaysEnabled && !getSelectedRepeatDays().length) {
     setSelectedRepeatDays([getIsoWeekday(fromDateKey(state.filters.selectedDate || toDateKey(new Date())))]);
   }
+}
+
+function repeatAllowsRoutineEvents(repeat) {
+  return ROUTINE_EVENT_REPEATS.includes(repeat);
+}
+
+function isSportFormDraft() {
+  if (normalizeTaskArea(els.taskArea?.value) === SPORT_AREA) {
+    return true;
+  }
+  const routineEventText = state.ui.routineEventsDraft.map((event) => event.title).join(" ");
+  return isSportLikeText(`${els.taskTitle?.value || ""} ${els.taskNotes?.value || ""} ${routineEventText}`);
 }
 
 async function initCloudSync() {
@@ -1890,8 +2163,8 @@ async function ensureNotificationServiceWorker() {
 async function showTaskNotification(task, body, kind) {
   const options = {
     body,
-    icon: "./assets/icon.svg",
-    badge: "./assets/icon.svg",
+    icon: "./assets/icon-192.png",
+    badge: "./assets/icon-192.png",
     tag: `task-${task.id}-${kind}`,
     renotify: true,
     data: {
@@ -1992,9 +2265,12 @@ function registerServiceWorker() {
     return;
   }
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./service-worker.js").catch(() => {
-      // La app sigue funcionando aunque el navegador bloquee el modo offline.
-    });
+    navigator.serviceWorker
+      .register("./service-worker.js")
+      .then((registration) => registration.update())
+      .catch(() => {
+        // La app sigue funcionando aunque el navegador bloquee el modo offline.
+      });
   });
 }
 
@@ -2011,7 +2287,7 @@ function normalizeTask(task) {
     importance: clampNumber(task.importance, 1, 5, 3),
     energy: ["baja", "media", "alta"].includes(task.energy) ? task.energy : "media",
     place: ["donde", "casa", "fuera", "online"].includes(task.place) ? task.place : "donde",
-    area: ["personal", "estudio", "trabajo", "salud", "casa", "creativo"].includes(task.area) ? task.area : "personal",
+    area: normalizeTaskArea(task.area),
     repeat: ["none", "daily", "weekly", "monthly", "weekdays", "weeklyTarget"].includes(task.repeat) ? task.repeat : "none",
     repeatDays: Array.isArray(task.repeatDays)
       ? [...new Set(task.repeatDays.map(Number).filter((day) => day >= 1 && day <= 7))].sort((a, b) => a - b)
@@ -2027,6 +2303,34 @@ function normalizeTask(task) {
     notified: Boolean(task.notified),
     reminderNotified: Boolean(task.reminderNotified),
   };
+}
+
+function normalizeTaskArea(area) {
+  const value = String(area || "").trim().toLowerCase();
+  if (TASK_AREAS.includes(value)) {
+    return value;
+  }
+  return isSportLikeText(value) ? SPORT_AREA : "personal";
+}
+
+function isSportTask(task) {
+  if (normalizeTaskArea(task.area) === SPORT_AREA) {
+    return true;
+  }
+  const routineEventText = (task.routineEvents || []).map((event) => event.title).join(" ");
+  return isSportLikeText(`${task.title} ${task.notes} ${routineEventText}`);
+}
+
+function isSportLikeText(value) {
+  const text = normalizeTextForMatch(value);
+  return SPORT_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+
+function normalizeTextForMatch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function normalizeRoutineEvents(events) {
@@ -2094,18 +2398,12 @@ function formatDateKey(key) {
   return new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", month: "short" }).format(fromDateKey(key));
 }
 
-function formatLongDate(date) {
-  return new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long" }).format(date);
+function formatShortWeekday(key) {
+  return new Intl.DateTimeFormat("es-ES", { weekday: "short" }).format(fromDateKey(key));
 }
 
-function formatPlace(place) {
-  const labels = {
-    donde: "Donde sea",
-    casa: "Casa",
-    fuera: "Fuera",
-    online: "Online",
-  };
-  return labels[place] || "Donde sea";
+function formatLongDate(date) {
+  return new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long" }).format(date);
 }
 
 function formatRepeat(taskOrRepeat) {

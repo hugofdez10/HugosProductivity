@@ -1,13 +1,17 @@
-const CACHE_NAME = "pulso-cache-v18";
+const CACHE_NAME = "pulso-cache-v21";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
+  "./styles.css?v=21",
+  "./app.js?v=21",
   "./supabase-config.js",
   "./manifest.webmanifest",
-  "./assets/icon.svg",
+  "./assets/logo-mark.png",
+  "./assets/logo-full.png",
+  "./assets/icon-192.png",
+  "./assets/icon-512.png",
 ];
+const NETWORK_FIRST_PATHS = new Set(["/", "/index.html", "/styles.css", "/app.js", "/service-worker.js"]);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -32,6 +36,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const url = new URL(event.request.url);
+  const pathname = url.pathname.replace(/\/+$/, "/");
+  const filePath = pathname.slice(pathname.lastIndexOf("/"));
+  if (NETWORK_FIRST_PATHS.has(filePath) || pathname.endsWith("/")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
   if (url.pathname.endsWith("/supabase-config.js")) {
     event.respondWith(
       fetch(event.request)
