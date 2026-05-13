@@ -101,8 +101,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Hugo's Productivity";
   const options = {
     body: payload.body || "Tienes un aviso pendiente.",
-    icon: "./assets/icon.svg",
-    badge: "./assets/icon.svg",
+    icon: "./assets/icon-192.png",
+    badge: "./assets/icon-192.png",
     tag: payload.tag || `task-reminder-${Date.now()}`,
     renotify: true,
     data: {
