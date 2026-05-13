@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx plugins *)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(npx supabase *)",
+      "Bash(supabase functions *)",
+      "PowerShell(Get-Command supabase -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Command npx -ErrorAction SilentlyContinue)",
+      "PowerShell(winget install Supabase.CLI)",
+      "PowerShell(winget search supabase)",
+      "PowerShell($url = \"https://github.com/supabase/cli/releases/latest/download/supabase_windows_amd64.tar.gz\"; $dest = \"$env:USERPROFILE\\\\AppData\\\\Local\\\\supabase\"; New-Item -ItemType Directory -Force $dest | Out-Null; Invoke-WebRequest -Uri $url -OutFile \"$dest\\\\supabase.tar.gz\" -UseBasicParsing; tar -xzf \"$dest\\\\supabase.tar.gz\" -C $dest; Write-Host \"Descargado en $dest\")"
+    ]
+  }
+}

@@ -1976,7 +1976,6 @@ function subscribeRealtime(userId) {
       "postgres_changes",
       { event: "*", schema: "public", table: "pulso_tasks" },
       async (payload) => {
-        console.log("[Realtime] evento recibido:", payload);
         if (payload.new?.user_id && payload.new.user_id !== userId) return;
         if (payload.old?.user_id && payload.old.user_id !== userId) return;
         if (state.sync.busy) return;
@@ -1986,14 +1985,10 @@ function subscribeRealtime(userId) {
           state.sync.lastSyncedAt = new Date().toISOString();
           saveState();
           render();
-        } catch (err) {
-          console.error("[Realtime] error al procesar evento:", err);
-        }
+        } catch (_) {}
       }
     )
-    .subscribe((status, err) => {
-      console.log("[Realtime] estado del canal:", status, err ?? "");
-    });
+    .subscribe();
 }
 
 function unsubscribeRealtime() {
