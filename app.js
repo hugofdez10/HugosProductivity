@@ -51,6 +51,7 @@ const state = {
     timer: null,
     lastSyncedAt: "",
     storageKey: "",
+    channel: null,
   },
 };
 
@@ -1773,14 +1774,18 @@ async function initCloudSync() {
     render();
     if (state.sync.user) {
       syncNow({ silent: true });
+      subscribeRealtime(state.sync.user.id);
       if ("Notification" in window && Notification.permission === "granted") {
         syncPushSubscription({ silent: true });
       }
+    } else {
+      unsubscribeRealtime();
     }
   });
 
   if (state.sync.user) {
     await syncNow({ silent: true });
+    subscribeRealtime(state.sync.user.id);
     if ("Notification" in window && Notification.permission === "granted") {
       syncPushSubscription({ silent: true });
     }
@@ -1959,6 +1964,41 @@ function scheduleCloudSync() {
   state.sync.timer = window.setTimeout(() => {
     syncNow({ silent: true });
   }, 800);
+}
+
+function subscribeRealtime(userId) {
+  unsubscribeRealtime();
+  state.sync.channel = state.sync.client
+    .channel("pulso_tasks_realtime_" + userId)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "pulso_tasks" },
+      async (payload) => {
+        console.log("[Realtime] evento recibido:", payload);
+        if (payload.new?.user_id && payload.new.user_id !== userId) return;
+        if (payload.old?.user_id && payload.old.user_id !== userId) return;
+        if (state.sync.busy) return;
+        try {
+          await pullRemoteTasks();
+          pruneDeletedTasks();
+          state.sync.lastSyncedAt = new Date().toISOString();
+          saveState();
+          render();
+        } catch (err) {
+          console.error("[Realtime] error al procesar evento:", err);
+        }
+      }
+    )
+    .subscribe((status, err) => {
+      console.log("[Realtime] estado del canal:", status, err ?? "");
+    });
+}
+
+function unsubscribeRealtime() {
+  if (state.sync.channel) {
+    state.sync.client.removeChannel(state.sync.channel);
+    state.sync.channel = null;
+  }
 }
 
 async function syncNow(options = {}) {
