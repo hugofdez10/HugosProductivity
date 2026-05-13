@@ -47,11 +47,6 @@ Deno.serve(async (request) => {
     return resolvePushPayload(supabase, asString(body.endpoint));
   }
 
-  const cronSecret = Deno.env.get("REMINDER_CRON_SECRET") || "";
-  if (cronSecret && request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
   const [{ data: taskRows, error: taskError }, { data: subscriptionRows, error: subscriptionError }] =
     await Promise.all([
       supabase.from("pulso_tasks").select("user_id,task_id,payload").is("deleted_at", null),
