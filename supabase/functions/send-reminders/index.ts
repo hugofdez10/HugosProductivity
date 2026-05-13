@@ -59,8 +59,11 @@ Deno.serve(async (request) => {
     ]);
 
   if (taskError || subscriptionError) {
+    console.error("DB error:", taskError?.message || subscriptionError?.message);
     return json({ error: taskError?.message || subscriptionError?.message }, 500);
   }
+
+  console.log(`tasks=${taskRows?.length ?? 0} subscriptions=${subscriptionRows?.length ?? 0}`);
 
   const subscriptionsByUser = new Map<string, PushSubscriptionRow[]>();
   for (const subscription of (subscriptionRows || []) as PushSubscriptionRow[]) {
@@ -102,11 +105,13 @@ Deno.serve(async (request) => {
       let delivered = false;
       for (const subscription of group.subscriptions) {
         const pushPayload = buildPushPayload(group.notification, row.payload, row.task_id);
+        console.log(`sending push task=${row.task_id} kind=${group.notification.kind} endpoint=${subscription.endpoint.slice(-20)}`);
         const result = await sendPush(subscription, {
           publicKey: vapidPublicKey,
           privateKey: vapidPrivateKey,
           subject: vapidSubject,
         }, pushPayload);
+        console.log(`push result=${result} task=${row.task_id}`);
         if (result === "sent") {
           sent += 1;
           delivered = true;
@@ -124,6 +129,7 @@ Deno.serve(async (request) => {
     }
   }
 
+  console.log(`done sent=${sent} skipped=${skipped} failed=${failed} expired=${expired}`);
   return json({ sent, skipped, failed, expired });
 });
 
@@ -329,7 +335,8 @@ async function sendPush(
       return "expired";
     }
     return response.ok ? "sent" : "failed";
-  } catch {
+  } catch (err) {
+    console.error("sendPush error:", err);
     return "failed";
   }
 }
