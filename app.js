@@ -52,6 +52,7 @@ const state = {
     lastSyncedAt: "",
     storageKey: "",
     channel: null,
+    channelUserId: null,
   },
 };
 
@@ -1785,7 +1786,6 @@ async function initCloudSync() {
 
   if (state.sync.user) {
     await syncNow({ silent: true });
-    subscribeRealtime(state.sync.user.id);
     if ("Notification" in window && Notification.permission === "granted") {
       syncPushSubscription({ silent: true });
     }
@@ -1967,7 +1967,9 @@ function scheduleCloudSync() {
 }
 
 function subscribeRealtime(userId) {
+  if (state.sync.channel && state.sync.channelUserId === userId) return;
   unsubscribeRealtime();
+  state.sync.channelUserId = userId;
   state.sync.channel = state.sync.client
     .channel("pulso_tasks_realtime_" + userId)
     .on(
@@ -1998,6 +2000,7 @@ function unsubscribeRealtime() {
   if (state.sync.channel) {
     state.sync.client.removeChannel(state.sync.channel);
     state.sync.channel = null;
+    state.sync.channelUserId = null;
   }
 }
 
