@@ -12,6 +12,7 @@ const APP_SHELL = [
   "./assets/icon-512.png",
 ];
 const NETWORK_FIRST_PATHS = new Set(["/", "/index.html", "/styles.css", "/app.js", "/service-worker.js"]);
+const REMINDER_FUNCTION_URL = "https://oigvjljneyrkjfqsvucq.supabase.co/functions/v1/send-reminders";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -91,13 +92,11 @@ self.addEventListener("notificationclick", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = {};
-  try {
-    payload = event.data ? event.data.json() : {};
-  } catch {
-    payload = {};
-  }
+  event.waitUntil(showPushNotification(event));
+});
 
+async function showPushNotification(event) {
+  const payload = await resolvePushPayload(event);
   const title = payload.title || "Hugo's Productivity";
   const options = {
     body: payload.body || "Tienes un aviso pendiente.",
@@ -112,5 +111,36 @@ self.addEventListener("push", (event) => {
     vibrate: [80, 40, 80],
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
-});
+  return self.registration.showNotification(title, options);
+}
+
+async function resolvePushPayload(event) {
+  try {
+    if (event.data) {
+      return event.data.json();
+    }
+  } catch {
+    // Empty pushes are resolved through the function below.
+  }
+
+  try {
+    const subscription = await self.registration.pushManager.getSubscription();
+    if (!subscription?.endpoint) {
+      return {};
+    }
+    const response = await fetch(REMINDER_FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "resolve-push",
+        endpoint: subscription.endpoint,
+      }),
+    });
+    if (!response.ok) {
+      return {};
+    }
+    return await response.json();
+  } catch {
+    return {};
+  }
+}

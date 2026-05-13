@@ -28,11 +28,6 @@ Deno.serve(async (request) => {
     return new Response(null, { status: 204 });
   }
 
-  const cronSecret = Deno.env.get("REMINDER_CRON_SECRET") || "";
-  if (cronSecret && request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY") || "";
@@ -46,6 +41,16 @@ Deno.serve(async (request) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
+
+  const body = await readJsonBody(request);
+  if (body.mode === "resolve-push") {
+    return resolvePushPayload(supabase, asString(body.endpoint));
+  }
+
+  const cronSecret = Deno.env.get("REMINDER_CRON_SECRET") || "";
+  if (cronSecret && request.headers.get("authorization") !== `Bearer ${cronSecret}`) {
+    return json({ error: "Unauthorized" }, 401);
+  }
 
   const [{ data: taskRows, error: taskError }, { data: subscriptionRows, error: subscriptionError }] =
     await Promise.all([
@@ -120,6 +125,67 @@ Deno.serve(async (request) => {
 
   return json({ sent, skipped, failed, expired });
 });
+
+async function resolvePushPayload(supabase: ReturnType<typeof createClient>, endpoint: string) {
+  if (!endpoint) {
+    return json({});
+  }
+
+  const { data: subscription } = await supabase
+    .from("pulso_push_subscriptions")
+    .select("user_id")
+    .eq("endpoint", endpoint)
+    .maybeSingle();
+
+  if (!subscription?.user_id) {
+    return json({});
+  }
+
+  const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const { data: log } = await supabase
+    .from("pulso_notification_log")
+    .select("task_id,kind,created_at")
+    .eq("user_id", subscription.user_id)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!log?.task_id) {
+    return json({});
+  }
+
+  const { data: taskRow } = await supabase
+    .from("pulso_tasks")
+    .select("payload")
+    .eq("user_id", subscription.user_id)
+    .eq("task_id", log.task_id)
+    .maybeSingle();
+
+  const task = (taskRow?.payload || {}) as Record<string, unknown>;
+  const title = asString(task.title) || "Hugo's Productivity";
+  const duration = Number(task.duration) || 30;
+  const body =
+    log.kind === "reminder"
+      ? `Aviso ${formatDateLabel(asString(task.reminderDate))}, ${asString(task.reminderTime)} · ${duration} min`
+      : `${formatDateLabel(asString(task.dueDate))}, ${asString(task.dueTime)} · ${duration} min`;
+
+  return json({
+    title,
+    body,
+    taskId: log.task_id,
+    tag: `task-${log.task_id}-${log.kind}`,
+    url: "./index.html",
+  });
+}
+
+async function readJsonBody(request: Request) {
+  try {
+    return (await request.json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 async function markTaskNotified(supabase: ReturnType<typeof createClient>, row: TaskRow, kind: DueNotification["kind"]) {
   const nowIso = new Date().toISOString();
@@ -305,6 +371,14 @@ function base64UrlDecode(value: string) {
 
 function asString(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function formatDateLabel(dateKey: string) {
+  if (!dateKey) {
+    return "";
+  }
+  const [year, month, day] = dateKey.split("-");
+  return `${day}/${month}/${year}`;
 }
 
 function json(payload: unknown, status = 200) {

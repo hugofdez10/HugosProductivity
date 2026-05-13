@@ -56,12 +56,12 @@ const state = {
 
 const els = {};
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   cacheElements();
   loadState();
   bindEvents();
   render();
-  initCloudSync();
+  await initCloudSync();
   registerServiceWorker();
   window.setInterval(checkReminders, 60 * 1000);
   checkReminders();
