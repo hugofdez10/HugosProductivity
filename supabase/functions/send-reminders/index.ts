@@ -22,6 +22,7 @@ type DueNotification = {
 
 const STALE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DUE_LEAD_MS = 10 * 60 * 1000;
+const DIAGNOSTIC_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -79,6 +80,7 @@ Deno.serve(async (request) => {
       continue;
     }
 
+    logNotificationCandidate(row.task_id, row.payload, subscriptions[0]?.timezone || "UTC", now);
     const groups = getDueGroups(row.payload, subscriptions, now);
     for (const group of groups) {
       const { error: logError } = await supabase.from("pulso_notification_log").insert({
@@ -208,7 +210,8 @@ function getDueGroups(task: Record<string, unknown>, subscriptions: PushSubscrip
   const groups = new Map<string, { notification: DueNotification; subscriptions: PushSubscriptionRow[] }>();
 
   for (const subscription of subscriptions) {
-    for (const notification of getDueNotifications(task, subscription.timezone || "UTC", now)) {
+    const timezone = getNotificationTimezone(task, subscription.timezone || "UTC");
+    for (const notification of getDueNotifications(task, timezone, now)) {
       const key = `${notification.kind}:${notification.fireAt.toISOString()}`;
       const group = groups.get(key) || { notification, subscriptions: [] };
       group.subscriptions.push(subscription);
@@ -217,6 +220,57 @@ function getDueGroups(task: Record<string, unknown>, subscriptions: PushSubscrip
   }
 
   return [...groups.values()];
+}
+
+function logNotificationCandidate(taskId: string, task: Record<string, unknown>, subscriptionTimezone: string, now: Date) {
+  const timezone = getNotificationTimezone(task, subscriptionTimezone);
+  const notification = getNextNotification(task, timezone);
+  if (!notification) {
+    return;
+  }
+  const deltaMs = notification.fireAt.getTime() - now.getTime();
+  if (Math.abs(deltaMs) > DIAGNOSTIC_WINDOW_MS) {
+    return;
+  }
+  const deltaMinutes = Math.round(deltaMs / 60000);
+  console.log(
+    `candidate task=${taskId} kind=${notification.kind} fireAt=${notification.fireAt.toISOString()} now=${now.toISOString()} timezone=${timezone} subscriptionTimezone=${subscriptionTimezone} deltaMinutes=${deltaMinutes}`,
+  );
+}
+
+function getNotificationTimezone(task: Record<string, unknown>, fallbackTimezone: string) {
+  const candidates = [asString(task.timezone), fallbackTimezone, "UTC"];
+  return candidates.find(isValidTimeZone) || "UTC";
+}
+
+function isValidTimeZone(timezone: string) {
+  if (!timezone) {
+    return false;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date(0));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getNextNotification(task: Record<string, unknown>, timezone: string): DueNotification | null {
+  const reminderDate = asString(task.reminderDate);
+  const reminderTime = asString(task.reminderTime);
+  if (reminderDate && reminderTime) {
+    return { kind: "reminder", fireAt: zonedDateTimeToUtc(reminderDate, reminderTime, timezone) };
+  }
+
+  const dueDate = asString(task.dueDate);
+  const dueTime = asString(task.dueTime);
+  const repeat = asString(task.repeat) || "none";
+  if (repeat === "none" && dueDate && dueTime) {
+    const fireAt = new Date(zonedDateTimeToUtc(dueDate, dueTime, timezone).getTime() - DUE_LEAD_MS);
+    return { kind: "due", fireAt };
+  }
+
+  return null;
 }
 
 function getDueNotifications(task: Record<string, unknown>, timezone: string, now: Date): DueNotification[] {
