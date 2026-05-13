@@ -209,9 +209,9 @@ function bindEvents() {
   els.signOutBtn.addEventListener("click", signOut);
 
   window.addEventListener("online", () => syncNow({ silent: true }));
-  document.addEventListener("visibilitychange", () => {
+  document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === "visible") {
-      syncNow({ silent: true });
+      await syncNow({ silent: true });
       checkReminders();
     }
   });
@@ -1500,11 +1500,17 @@ async function initCloudSync() {
     render();
     if (state.sync.user) {
       syncNow({ silent: true });
+      if ("Notification" in window && Notification.permission === "granted") {
+        syncPushSubscription({ silent: true });
+      }
     }
   });
 
   if (state.sync.user) {
     await syncNow({ silent: true });
+    if ("Notification" in window && Notification.permission === "granted") {
+      syncPushSubscription({ silent: true });
+    }
   }
 }
 
@@ -1513,6 +1519,7 @@ function getSupabaseConfig() {
   return {
     url: String(config.url || "").trim(),
     key: String(config.publishableKey || config.anonKey || "").trim(),
+    vapidPublicKey: String(config.vapidPublicKey || "").trim(),
   };
 }
 
@@ -1662,6 +1669,7 @@ async function signOut() {
   if (!state.sync.client) {
     return;
   }
+  await removePushSubscription();
   await state.sync.client.auth.signOut();
   state.sync.user = null;
   loadState(getActiveStorageKey());
@@ -1814,7 +1822,8 @@ async function requestNotifications() {
   const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission === "granted") {
     await ensureNotificationServiceWorker();
-    toast("Avisos activados.");
+    const pushReady = await syncPushSubscription();
+    toast(pushReady ? "Avisos activados en segundo plano." : "Avisos activados en esta app.");
     checkReminders();
   } else {
     toast("Avisos sin activar.");
@@ -1917,6 +1926,95 @@ async function showTaskNotification(task, body, kind) {
   } catch {
     return false;
   }
+}
+
+async function syncPushSubscription(options = {}) {
+  const { silent = false } = options;
+  if (!state.sync.client || !state.sync.user) {
+    if (!silent) {
+      toast("Inicia sesion para recibir avisos con la app cerrada.");
+    }
+    return false;
+  }
+
+  const config = getSupabaseConfig();
+  if (!config.vapidPublicKey) {
+    if (!silent) {
+      toast("Falta la clave publica VAPID para avisos en segundo plano.");
+    }
+    return false;
+  }
+
+  const registration = await ensureNotificationServiceWorker();
+  if (!registration?.pushManager) {
+    if (!silent) {
+      toast("Este navegador no permite avisos en segundo plano.");
+    }
+    return false;
+  }
+
+  try {
+    const subscription =
+      (await registration.pushManager.getSubscription()) ||
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.vapidPublicKey),
+      }));
+    const row = pushSubscriptionToRow(subscription);
+    const { error } = await state.sync.client.from("pulso_push_subscriptions").upsert(row, {
+      onConflict: "user_id,endpoint",
+    });
+    if (error) {
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    console.error(error);
+    if (!silent) {
+      toast("No he podido guardar el dispositivo para segundo plano.");
+    }
+    return false;
+  }
+}
+
+async function removePushSubscription() {
+  if (!state.sync.client || !state.sync.user || !("serviceWorker" in navigator)) {
+    return;
+  }
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager?.getSubscription();
+    if (!subscription) {
+      return;
+    }
+    await state.sync.client
+      .from("pulso_push_subscriptions")
+      .delete()
+      .eq("user_id", state.sync.user.id)
+      .eq("endpoint", subscription.endpoint);
+  } catch {
+    // Sign out should continue even if the browser refuses push cleanup.
+  }
+}
+
+function pushSubscriptionToRow(subscription) {
+  const json = subscription.toJSON();
+  return {
+    user_id: state.sync.user.id,
+    endpoint: json.endpoint,
+    p256dh: json.keys?.p256dh || "",
+    auth: json.keys?.auth || "",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    user_agent: navigator.userAgent || "",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }
 
 async function installApp() {

@@ -17,6 +17,7 @@ URL publicada: [hugosproductivity.netlify.app](https://hugosproductivity.netlify
 - Ver el plan del día, los pendientes, un calendario mensual y una vista de radar.
 - Crear rutinas diarias, semanales, mensuales, por días concretos o por objetivo semanal.
 - Activar avisos con fecha y hora usando notificaciones del navegador.
+- Recibir avisos en segundo plano en movil mediante Web Push, Supabase y una Edge Function programada.
 - Buscar tareas por título, notas o etiquetas.
 - Exportar e importar una copia de tus datos en JSON.
 - Usarla como app instalada gracias al manifest y al service worker.
@@ -88,6 +89,38 @@ http://localhost:5178/**
 ```
 
 Cada usuario solo puede leer y escribir sus propias tareas gracias a las políticas de Row Level Security incluidas en `supabase/schema.sql`.
+
+## Avisos En Segundo Plano
+
+Los avisos dentro de la app funcionan con las notificaciones del navegador. En movil, si la PWA esta cerrada, el navegador puede suspender la pagina y no ejecuta temporizadores locales. Para que los avisos lleguen con la app cerrada hay que usar Web Push:
+
+1. Ejecuta de nuevo `supabase/schema.sql` para crear `pulso_push_subscriptions` y `pulso_notification_log`.
+2. Genera claves VAPID:
+
+```powershell
+node -e "const { webcrypto } = require('crypto'); const b64 = (v) => Buffer.from(v).toString('base64url'); webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']).then(async (keys) => { const pub = await webcrypto.subtle.exportKey('raw', keys.publicKey); const priv = await webcrypto.subtle.exportKey('jwk', keys.privateKey); console.log('VAPID_PUBLIC_KEY=' + b64(new Uint8Array(pub))); console.log('VAPID_PRIVATE_KEY=' + priv.d); });"
+```
+
+3. Copia `VAPID_PUBLIC_KEY` en `supabase-config.js` como `vapidPublicKey`.
+4. Guarda los secretos de la Edge Function:
+
+```powershell
+supabase secrets set VAPID_PUBLIC_KEY="..." VAPID_PRIVATE_KEY="..." VAPID_SUBJECT="mailto:tu-email@example.com" REMINDER_CRON_SECRET="un-secreto-largo"
+```
+
+5. Despliega la funcion:
+
+```powershell
+supabase functions deploy send-reminders --no-verify-jwt
+```
+
+6. Programa `send-reminders` cada minuto desde Supabase Dashboard o con el Scheduler, enviando la cabecera:
+
+```text
+Authorization: Bearer un-secreto-largo
+```
+
+Los avisos en segundo plano necesitan que el usuario haya iniciado sesion, porque la Edge Function lee las tareas sincronizadas en Supabase. Sin sesion, los avisos siguen funcionando mientras la app esta abierta.
 
 ## Privacidad
 

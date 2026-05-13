@@ -1,4 +1,4 @@
-const CACHE_NAME = "pulso-cache-v18";
+const CACHE_NAME = "pulso-cache-v19";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -70,4 +70,29 @@ self.addEventListener("notificationclick", (event) => {
       return self.clients.openWindow(targetUrl);
     }),
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {};
+  }
+
+  const title = payload.title || "Hugo's Productivity";
+  const options = {
+    body: payload.body || "Tienes un aviso pendiente.",
+    icon: "./assets/icon.svg",
+    badge: "./assets/icon.svg",
+    tag: payload.tag || `task-reminder-${Date.now()}`,
+    renotify: true,
+    data: {
+      taskId: payload.taskId || "",
+      url: payload.url || "./index.html",
+    },
+    vibrate: [80, 40, 80],
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
 });
