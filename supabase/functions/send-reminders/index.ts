@@ -29,6 +29,13 @@ Deno.serve(async (request) => {
     return new Response(null, { status: 204 });
   }
 
+  const expectedSecret = Deno.env.get("REMINDER_CRON_SECRET") || "";
+  const authHeader = request.headers.get("Authorization") || "";
+
+  if (!expectedSecret || authHeader !== `Bearer ${expectedSecret}`) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY") || "";

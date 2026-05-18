@@ -77,6 +77,13 @@ on public.pulso_notification_log (created_at);
 
 alter table public.pulso_notification_log enable row level security;
 
+drop policy if exists "Hugo select own notification log" on public.pulso_notification_log;
+create policy "Hugo select own notification log"
+on public.pulso_notification_log
+for select
+to authenticated
+using ((select auth.uid()) = user_id);
+
 drop policy if exists "Pulso insert own tasks" on public.pulso_tasks;
 drop policy if exists "Hugo insert own tasks" on public.pulso_tasks;
 create policy "Hugo insert own tasks"

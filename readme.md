@@ -3,13 +3,13 @@
 ![PWA](https://img.shields.io/badge/PWA-instalable-111827?style=for-the-badge&logo=pwa)
 ![JavaScript](https://img.shields.io/badge/JavaScript-vanilla-F7DF1E?style=for-the-badge&logo=javascript&logoColor=111827)
 ![Supabase](https://img.shields.io/badge/Supabase-sync-3FCF8E?style=for-the-badge&logo=supabase&logoColor=0f172a)
-![Netlify](https://img.shields.io/badge/Netlify-deploy-00C7B7?style=for-the-badge&logo=netlify&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-deploy-000000?style=for-the-badge&logo=vercel&logoColor=white)
 
 Una PWA personal para organizar tareas, rutinas, calendario y recordatorios desde el ordenador o el iPhone.
 
 La idea nació de una sensación bastante simple: probé aplicaciones de productividad, pero ninguna encajaba del todo con mi forma de organizarme. Unas eran demasiado rígidas, otras demasiado cargadas, y casi todas me obligaban a trabajar como quería la herramienta. Así que decidí desarrollar la mía: una app hecha a mi medida, con los flujos, prioridades y pequeños detalles que yo quería usar cada día.
 
-URL publicada: [hugosproductivity.netlify.app](https://hugosproductivity.netlify.app)
+URL publicada: despliegue de produccion en Vercel conectado al repositorio de GitHub.
 
 ## Qué Puedes Hacer
 
@@ -39,7 +39,8 @@ La app combina tres ideas:
 - Lucide Icons para la interfaz.
 - Service Worker y Web App Manifest para instalación como PWA.
 - Supabase Auth y PostgreSQL con Row Level Security para sincronización por usuario.
-- Netlify como despliegue estático.
+- Vercel como despliegue estático del frontend.
+- Supabase Edge Functions para avisos push en segundo plano.
 
 ## Ejecutar En Local
 
@@ -57,11 +58,23 @@ http://localhost:5178
 
 No hace falta build ni bundler: es una app estática.
 
+## Despliegue
+
+El frontend se despliega en Vercel desde el repositorio de GitHub. Al hacer `git push` a la rama de produccion, Vercel publica la nueva version de la PWA.
+
+La Edge Function se despliega aparte en Supabase:
+
+```powershell
+npx supabase functions deploy send-reminders --project-ref <project-ref> --no-verify-jwt
+```
+
+Cuando se cambian `app.js`, `index.html` o `service-worker.js`, conviene subir la version de cache/querystring para que iPhone descargue el codigo nuevo.
+
 ## Usarla En iPhone
 
-Para instalarla en iPhone necesitas abrirla desde una URL HTTPS, por ejemplo la versión publicada en Netlify.
+Para instalarla en iPhone necesitas abrirla desde una URL HTTPS, por ejemplo la versión publicada en Vercel.
 
-1. Abre `https://hugosproductivity.netlify.app` en Safari.
+1. Abre la URL de producción de Vercel en Safari.
 2. Pulsa compartir.
 3. Elige `Añadir a pantalla de inicio`.
 
@@ -74,27 +87,49 @@ La app funciona en local sin cuenta. Si quieres sincronización:
 1. Crea un proyecto en Supabase.
 2. Ejecuta `supabase/schema.sql` en el SQL Editor.
 3. Copia la `Project URL` y la clave `publishable` o `anon`.
-4. Pega esos valores en `supabase-config.js`.
+4. Copia `supabase-config.example.js` a `supabase-config.js` y pega esos valores publicos.
 5. En `Authentication > URL Configuration`, configura la URL de la app:
 
 ```text
-https://hugosproductivity.netlify.app
+https://<tu-dominio-de-vercel>
 ```
 
 Y añade estos redirects:
 
 ```text
-https://hugosproductivity.netlify.app/**
+https://<tu-dominio-de-vercel>/**
 http://localhost:5178/**
 ```
 
 Cada usuario solo puede leer y escribir sus propias tareas gracias a las políticas de Row Level Security incluidas en `supabase/schema.sql`.
 
+## Seguridad
+
+- No subas archivos `.env` ni claves privadas al repositorio. Usa `.env.example` solo como lista de variables necesarias.
+- `supabase-config.js` se carga en el navegador y solo debe contener valores publicos: `Project URL`, clave `publishable`/`anon` y `VAPID_PUBLIC_KEY`.
+- `SUPABASE_SERVICE_ROLE_KEY`, `VAPID_PRIVATE_KEY` y `REMINDER_CRON_SECRET` deben configurarse como secrets en Supabase Edge Functions, Vercel o GitHub Actions segun donde se usen.
+- La Edge Function `send-reminders` se despliega con `--no-verify-jwt`, pero exige `REMINDER_CRON_SECRET` en cada llamada que no sea `OPTIONS`.
+- El cron debe enviar esta cabecera:
+
+```text
+Authorization: Bearer <REMINDER_CRON_SECRET>
+```
+
 ## Avisos En Segundo Plano
 
-Los avisos dentro de la app funcionan con las notificaciones del navegador. En movil, si la PWA esta cerrada, el navegador puede suspender la pagina y no ejecuta temporizadores locales. Para que los avisos lleguen con la app cerrada hay que usar Web Push:
+Los avisos dentro de la app funcionan con las notificaciones del navegador. En movil, si la PWA esta cerrada, el navegador puede suspender la pagina y no ejecuta temporizadores locales. Para que los avisos lleguen con la app cerrada se usa Web Push:
 
-1. Ejecuta de nuevo `supabase/schema.sql` para crear `pulso_push_subscriptions` y `pulso_notification_log`.
+- La app guarda la suscripcion push del dispositivo en `pulso_push_subscriptions`.
+- Las tareas sincronizadas viven en `pulso_tasks`.
+- La Edge Function `send-reminders` corre cada minuto desde Supabase Scheduler/cron.
+- La funcion busca tareas debidas, cifra el payload Web Push y lo envia al push service.
+- Los envios quedan registrados en `pulso_notification_log` para evitar duplicados.
+- Cada tarea guarda su `timezone`, y la funcion lo usa para calcular correctamente los avisos aunque el cron corra en UTC.
+- Estado actual: los avisos push en segundo plano ya funcionan con la PWA cerrada en iPhone.
+
+Para configurar desde cero:
+
+1. Ejecuta `supabase/schema.sql` para crear `pulso_push_subscriptions` y `pulso_notification_log`.
 2. Genera claves VAPID:
 
 ```powershell
@@ -105,19 +140,23 @@ node -e "const { webcrypto } = require('crypto'); const b64 = (v) => Buffer.from
 4. Guarda los secretos de la Edge Function:
 
 ```powershell
-supabase secrets set VAPID_PUBLIC_KEY="..." VAPID_PRIVATE_KEY="..." VAPID_SUBJECT="mailto:tu-email@example.com" REMINDER_CRON_SECRET="un-secreto-largo"
+npx supabase secrets set VAPID_PUBLIC_KEY="..." VAPID_PRIVATE_KEY="..." VAPID_SUBJECT="mailto:tu-email@example.com" REMINDER_CRON_SECRET="..." --project-ref <project-ref>
 ```
 
-5. Despliega la funcion:
+5. Despliega la funcion sin verificacion JWT:
 
 ```powershell
-supabase functions deploy send-reminders --no-verify-jwt
+npx supabase functions deploy send-reminders --project-ref <project-ref> --no-verify-jwt
 ```
 
-6. Programa `send-reminders` cada minuto desde Supabase Dashboard o con el Scheduler, enviando la cabecera:
+6. Programa `send-reminders` cada minuto desde Supabase Dashboard, `pg_cron` o Scheduler. La verificacion JWT esta desactivada para esta funcion, asi que el cron debe enviar `Authorization: Bearer <REMINDER_CRON_SECRET>`.
+
+Logs esperados cuando un recordatorio esta cerca:
 
 ```text
-Authorization: Bearer un-secreto-largo
+candidate task=... kind=reminder ... timezone=Europe/Madrid ... deltaMinutes=...
+sending push task=...
+push result=sent
 ```
 
 Los avisos en segundo plano necesitan que el usuario haya iniciado sesion, porque la Edge Function lee las tareas sincronizadas en Supabase. Sin sesion, los avisos siguen funcionando mientras la app esta abierta.
@@ -135,6 +174,10 @@ También puedes exportar e importar tus datos manualmente cuando quieras mover u
 ├── assets/
 │   └── icon.svg
 ├── supabase/
+│   ├── functions/
+│   │   └── send-reminders/
+│   │       └── index.ts
+│   ├── migrations/
 │   └── schema.sql
 ├── app.js
 ├── index.html
@@ -146,4 +189,14 @@ También puedes exportar e importar tus datos manualmente cuando quieras mover u
 
 ## Estado Del Proyecto
 
-Proyecto personal en evolución. La prioridad es que siga siendo útil, rápida y cómoda para el uso diario: menos ruido, más claridad, y una forma de productividad que no obligue a adaptarse a una herramienta ajena.
+Proyecto personal en evolucion y ya usable como PWA de productividad con sincronizacion en Supabase. El frontend esta alojado en Vercel y conectado al repositorio de GitHub.
+
+Estado actual:
+
+- Gestion de tareas, rutinas, calendario, busqueda, exportacion/importacion y sincronizacion cloud funcionando.
+- Notificaciones in-app funcionando cuando la PWA esta abierta.
+- Notificaciones push en segundo plano funcionando con la PWA cerrada en iPhone mediante `send-reminders`, Web Push y Service Worker.
+- La Edge Function esta desplegada en Supabase con JWT verification desactivada y cron cada minuto.
+- La sincronizacion fuerza el guardado de tareas con aviso antes de cerrar/ocultar la app para que el cron pueda procesarlas a tiempo.
+
+La prioridad sigue siendo mantenerla rapida, clara y comoda para el uso diario: menos ruido, mas control personal y avisos fiables cuando la app no esta abierta.
