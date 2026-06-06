@@ -13,15 +13,14 @@ URL publicada: [hugosproductivity.netlify.app](https://hugosproductivity.netlify
 
 ## Qué Puedes Hacer
 
-- Capturar tareas rápido con fecha, hora, duración, importancia, energía, lugar, área y notas.
-- Ver el plan del día, los pendientes, un calendario mensual y una vista de radar.
+- Capturar tareas rápido con fecha, hora, aviso, energía, lugar, área y notas.
+- Ver el plan del día, los pendientes y un calendario mensual.
 - Crear rutinas diarias, semanales, mensuales, por días concretos o por objetivo semanal.
 - Activar avisos con fecha y hora usando notificaciones del navegador.
 - Recibir avisos en segundo plano en movil mediante Web Push, Supabase y una Edge Function programada.
-- Buscar tareas por título, notas o etiquetas.
 - Exportar e importar una copia de tus datos en JSON.
 - Usarla como app instalada gracias al manifest y al service worker.
-- Sincronizar tareas con Supabase al iniciar sesión.
+- Sincronizar tareas con Supabase al iniciar sesión y al detectar cambios remotos.
 
 ## Por Qué Es Diferente
 

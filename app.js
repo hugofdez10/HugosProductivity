@@ -35,9 +35,7 @@ const state = {
   currentMonth: startOfMonth(new Date()),
   deferredInstallPrompt: null,
   ui: {
-    searchTimer: null,
     renderFrame: null,
-    reminderCheckRunning: false,
     routineEventsDraft: [],
     expandedCalendarOpen: false,
     expandedCalendarMode: "day",
@@ -49,6 +47,8 @@ const state = {
     pendingEmail: localStorage.getItem("hugos-productivity-pending-email") || "",
     busy: false,
     timer: null,
+    remoteTimer: null,
+    channel: null,
     lastSyncedAt: "",
     storageKey: "",
   },
@@ -63,8 +63,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   render();
   await initCloudSync();
   registerServiceWorker();
-  window.setInterval(checkReminders, 60 * 1000);
-  checkReminders();
 });
 
 window.addEventListener("beforeinstallprompt", (event) => {
@@ -78,7 +76,6 @@ window.addEventListener("beforeinstallprompt", (event) => {
 function cacheElements() {
   [
     "todayLabel",
-    "searchInput",
     "notifyBtn",
     "installBtn",
     "exportBtn",
@@ -105,8 +102,6 @@ function cacheElements() {
     "taskTime",
     "taskReminderDate",
     "taskReminderTime",
-    "taskDuration",
-    "taskImportance",
     "taskEnergy",
     "taskPlace",
     "taskArea",
@@ -150,11 +145,6 @@ function cacheElements() {
 }
 
 function bindEvents() {
-  els.searchInput.addEventListener("input", (event) => {
-    state.filters.query = event.target.value.trim().toLowerCase();
-    debounceSearchRender();
-  });
-
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {
       state.filters.view = button.dataset.view;
@@ -267,7 +257,6 @@ function bindEvents() {
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === "visible") {
       await syncNow({ silent: true });
-      checkReminders();
     }
   });
   document.addEventListener("keydown", (event) => {
@@ -275,7 +264,6 @@ function bindEvents() {
       closeExpandedCalendar();
     }
   });
-  window.addEventListener("focus", () => checkReminders());
 }
 
 function handleTaskListClick(event) {
@@ -312,6 +300,12 @@ function loadState(storageKey = getActiveStorageKey(), options = {}) {
   if (saved.filters) {
     state.filters = { ...state.filters, ...saved.filters };
   }
+  if (!["today", "pending", "calendar"].includes(state.filters.view)) {
+    state.filters.view = "today";
+  }
+  if (!["smart", "near"].includes(state.filters.sort)) {
+    state.filters.sort = "smart";
+  }
 
   const seeded = ensureDefaultTasks(saved.defaultDataVersion || 0);
   if (seeded) {
@@ -330,7 +324,6 @@ function readStoredState(storageKey) {
 }
 
 function applyStateToControls() {
-  els.searchInput.value = state.filters.query;
   els.sortMode.value = state.filters.sort;
   els.installBtn.classList.add("hidden");
   syncWeekdayPickerState();
@@ -418,23 +411,14 @@ function renderSoon() {
   });
 }
 
-function debounceSearchRender() {
-  window.clearTimeout(state.ui.searchTimer);
-  state.ui.searchTimer = window.setTimeout(() => {
-    render();
-  }, 110);
-}
-
 function renderTabs() {
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.filters.view);
   });
 
-  const calendarOnly = state.filters.view === "calendar";
-  const radarOnly = state.filters.view === "radar";
   els.calendarSection.classList.toggle("hidden", false);
-  els.taskBoardSection.classList.toggle("hidden", calendarOnly && window.innerWidth < 760);
-  els.sortMode.closest(".sort-field").classList.toggle("hidden", radarOnly);
+  els.taskBoardSection.classList.toggle("hidden", false);
+  els.sortMode.closest(".sort-field").classList.toggle("hidden", false);
 }
 
 function renderCloudSync() {
@@ -552,13 +536,6 @@ function renderTaskBoard() {
   const view = state.filters.view;
   const selectedLabel = formatDateKey(state.filters.selectedDate);
 
-  if (view === "radar") {
-    els.boardEyebrow.textContent = "Mapa";
-    els.boardTitle.textContent = "Radar de tareas";
-    renderRadar();
-    return;
-  }
-
   const tasks = getVisibleTasks();
   const titleByView = {
     today: isTodayKey(state.filters.selectedDate) ? "Hoy" : selectedLabel,
@@ -590,45 +567,6 @@ function renderTaskBoard() {
   els.taskBoard.className = "task-list";
   els.taskBoard.innerHTML = tasks
     .map((task) => taskCardTemplate(task, false, view === "calendar" ? state.filters.selectedDate : ""))
-    .join("");
-}
-
-function renderRadar() {
-  const today = toDateKey(new Date());
-  const active = state.tasks.filter((task) => !task.completed && matchesQuery(task));
-  const priorityIds = new Set(sortTasks(active).slice(0, 5).map((task) => task.id));
-  const lanes = [
-    {
-      title: "Prioridad",
-      tasks: active.filter((task) => priorityIds.has(task.id)),
-    },
-    {
-      title: "Esta semana",
-      tasks: active.filter((task) => task.dueDate && diffDays(today, task.dueDate) >= 0 && diffDays(today, task.dueDate) <= 7 && !priorityIds.has(task.id)),
-    },
-    {
-      title: "Sin fecha",
-      tasks: active.filter((task) => !task.dueDate),
-    },
-    {
-      title: "Hechas",
-      tasks: state.tasks.filter((task) => task.completed && matchesQuery(task)).slice(0, 6),
-    },
-  ];
-
-  els.taskBoard.className = "lane-grid";
-  els.taskBoard.innerHTML = lanes
-    .map((lane) => {
-      const cards = lane.tasks.length
-        ? lane.tasks.slice(0, 6).map((task) => taskCardTemplate(task, true)).join("")
-        : `<p class="empty-copy">Nada por aquí.</p>`;
-      return `
-        <div class="lane">
-          <h3>${lane.title}<span>${lane.tasks.length}</span></h3>
-          ${cards}
-        </div>
-      `;
-    })
     .join("");
 }
 
@@ -818,7 +756,6 @@ function expandedCalendarEntryTemplate(entry) {
       <div class="timeline-entry-main">
         <p>${escapeHtml(formatRoutineOccurrenceTitle(task, dateKey))}</p>
         <div>
-          <span>${task.duration} min</span>
           ${task.repeat !== "none" ? `<span>${formatRepeat(task)}</span>` : ""}
           ${routineEvent ? `<span>${escapeHtml(routineEvent.title)}</span>` : ""}
         </div>
@@ -939,16 +876,10 @@ function sortTasks(tasks) {
   const sortMode = state.filters.sort;
 
   return [...tasks].sort((a, b) => {
-    if (sortMode === "importance") {
-      return b.importance - a.importance || compareDue(a, b);
-    }
     if (sortMode === "near") {
-      return compareDue(a, b) || b.importance - a.importance;
+      return compareDue(a, b);
     }
-    if (sortMode === "duration") {
-      return a.duration - b.duration || b.importance - a.importance;
-    }
-    return compareDue(a, b) || b.importance - a.importance || a.duration - b.duration;
+    return compareDue(a, b);
   });
 }
 
@@ -957,9 +888,9 @@ function sortTasksForDate(tasks, dateKey) {
     const aDue = getTaskDueDate(a, dateKey);
     const bDue = getTaskDueDate(b, dateKey);
     if (aDue && bDue) {
-      return aDue - bDue || b.importance - a.importance;
+      return aDue - bDue;
     }
-    return b.importance - a.importance || a.duration - b.duration;
+    return compareDue(a, b);
   });
 }
 
@@ -1071,7 +1002,6 @@ function scheduleCardTemplate(entry) {
       <div class="task-main">
         <p class="task-name">${escapeHtml(formatRoutineOccurrenceTitle(task, dateKey))}</p>
         <div class="task-meta">
-          <span>${task.duration} min</span>
           ${task.repeat !== "none" ? `<span class="${recurring ? "routine-badge" : ""}">${formatRepeat(task)}</span>` : ""}
           ${routineEvent ? `<span class="routine-event-pill">${escapeHtml(routineEvent.title)}</span>` : ""}
           ${reminder ? `<span class="reminder-pill">${reminder}</span>` : ""}
@@ -1114,13 +1044,9 @@ function taskCardTemplate(task, compact = false, occurrenceDate = "") {
         <p class="task-name">${escapeHtml(formatRoutineOccurrenceTitle(task, occurrenceDate || getTaskDisplayDate(task)))}</p>
         <div class="task-meta">
           <span>${due}</span>
-          <span>${task.duration} min</span>
           ${task.repeat !== "none" ? `<span class="${recurring ? "routine-badge" : ""}">${formatRepeat(task)}</span>` : ""}
           ${routineEvent ? `<span class="routine-event-pill">${escapeHtml(routineEvent.title)}</span>` : ""}
           ${reminder ? `<span class="reminder-pill">${reminder}</span>` : ""}
-        </div>
-        <div class="task-tags">
-          ${priorityDots(task.importance)}
         </div>
         ${note}
       </div>
@@ -1129,14 +1055,6 @@ function taskCardTemplate(task, compact = false, occurrenceDate = "") {
       </div>
     </article>
   `;
-}
-
-function priorityDots(level) {
-  const dots = Array.from({ length: 5 }, (_, index) => {
-    const filled = index < level ? "filled" : "";
-    return `<span class="priority-dot ${filled}"></span>`;
-  }).join("");
-  return `<span class="priority-dots" aria-label="Importancia ${level} de 5">${dots}</span>`;
 }
 
 function upsertTaskFromForm() {
@@ -1164,8 +1082,8 @@ function upsertTaskFromForm() {
     dueTime: els.taskTime.value,
     reminderDate: reminder.date,
     reminderTime: reminder.time,
-    duration: clampNumber(els.taskDuration.value, 5, 480, 30),
-    importance: clampNumber(els.taskImportance.value, 1, 5, 3),
+    duration: existingTask?.duration || 30,
+    importance: existingTask?.importance || 3,
     energy: getOptionalControlValue(els.taskEnergy, existingTask?.energy || "media"),
     place: getOptionalControlValue(els.taskPlace, existingTask?.place || "donde"),
     area: getFormTaskArea(existingTask),
@@ -1264,8 +1182,6 @@ function editTask(taskId) {
   els.taskTime.value = task.dueTime;
   els.taskReminderDate.value = task.reminderDate || "";
   els.taskReminderTime.value = task.reminderTime || "";
-  els.taskDuration.value = task.duration;
-  els.taskImportance.value = task.importance;
   setOptionalControlValue(els.taskEnergy, task.energy);
   setOptionalControlValue(els.taskPlace, task.place);
   setOptionalControlValue(els.taskArea, task.area);
@@ -1330,10 +1246,8 @@ function updateTask(taskId, patch) {
 function resetForm() {
   els.taskForm.reset();
   els.editingId.value = "";
-  els.taskDuration.value = 30;
   els.taskReminderDate.value = "";
   els.taskReminderTime.value = "";
-  els.taskImportance.value = 3;
   setOptionalControlValue(els.taskEnergy, "media");
   setOptionalControlValue(els.taskPlace, "donde");
   setOptionalControlValue(els.taskArea, "personal");
@@ -1766,7 +1680,9 @@ async function initCloudSync() {
       if (nextStorageKey !== previousStorageKey) {
         loadState(nextStorageKey);
       }
+      subscribeToRemoteChanges();
     } else if (previousStorageKey !== getActiveStorageKey()) {
+      unsubscribeFromRemoteChanges();
       loadState(getActiveStorageKey());
     }
     renderCloudSync();
@@ -1780,6 +1696,7 @@ async function initCloudSync() {
   });
 
   if (state.sync.user) {
+    subscribeToRemoteChanges();
     await syncNow({ silent: true });
     if ("Notification" in window && Notification.permission === "granted") {
       syncPushSubscription({ silent: true });
@@ -1858,6 +1775,7 @@ async function verifyOtpCode(event) {
     return;
   }
   state.sync.user = data.user || data.session?.user || state.sync.user;
+  subscribeToRemoteChanges();
   clearPendingEmail();
   els.authCode.value = "";
   loadState(getActiveStorageKey());
@@ -1896,6 +1814,7 @@ async function signInWithPassword(event) {
     return;
   }
   state.sync.user = data.user || data.session?.user || state.sync.user;
+  subscribeToRemoteChanges();
   clearPendingEmail();
   els.authPassword.value = "";
   loadState(getActiveStorageKey());
@@ -1943,6 +1862,7 @@ async function signOut() {
     return;
   }
   await removePushSubscription();
+  unsubscribeFromRemoteChanges();
   await state.sync.client.auth.signOut();
   state.sync.user = null;
   loadState(getActiveStorageKey());
@@ -1992,6 +1912,45 @@ async function syncNow(options = {}) {
     state.sync.busy = false;
     renderCloudSync();
   }
+}
+
+function subscribeToRemoteChanges() {
+  if (!state.sync.client || !state.sync.user) {
+    return;
+  }
+  unsubscribeFromRemoteChanges();
+  state.sync.channel = state.sync.client
+    .channel(`pulso_tasks:${state.sync.user.id}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "pulso_tasks",
+        filter: `user_id=eq.${state.sync.user.id}`,
+      },
+      () => scheduleRemotePull(),
+    )
+    .subscribe();
+}
+
+function unsubscribeFromRemoteChanges() {
+  window.clearTimeout(state.sync.remoteTimer);
+  state.sync.remoteTimer = null;
+  if (state.sync.channel && state.sync.client?.removeChannel) {
+    state.sync.client.removeChannel(state.sync.channel);
+  }
+  state.sync.channel = null;
+}
+
+function scheduleRemotePull() {
+  if (!state.sync.client || !state.sync.user) {
+    return;
+  }
+  window.clearTimeout(state.sync.remoteTimer);
+  state.sync.remoteTimer = window.setTimeout(() => {
+    syncNow({ silent: true });
+  }, 250);
 }
 
 async function pushLocalTasks() {
@@ -2096,64 +2055,9 @@ async function requestNotifications() {
   if (permission === "granted") {
     await ensureNotificationServiceWorker();
     const pushReady = await syncPushSubscription();
-    toast(pushReady ? "Avisos activados en segundo plano." : "Avisos activados en esta app.");
-    checkReminders();
+    toast(pushReady ? "Avisos activados en segundo plano." : "Permiso de avisos activado.");
   } else {
     toast("Avisos sin activar.");
-  }
-}
-
-async function checkReminders() {
-  if (!("Notification" in window) || Notification.permission !== "granted") {
-    return;
-  }
-  if (state.ui.reminderCheckRunning) {
-    return;
-  }
-  state.ui.reminderCheckRunning = true;
-  try {
-    const now = new Date();
-    let changed = false;
-    for (const task of state.tasks) {
-      if (task.completed || isPastCompletedRoutine(task)) {
-        continue;
-      }
-
-      const reminder = getTaskReminderDate(task);
-      if (reminder) {
-        const minutes = (reminder.getTime() - now.getTime()) / 60000;
-        if (!task.reminderNotified && minutes <= 0 && minutes >= -24 * 60) {
-          const shown = await showTaskNotification(task, `${formatReminder(task)} · ${task.duration} min`, "reminder");
-          if (shown) {
-            task.reminderNotified = true;
-            task.updatedAt = new Date().toISOString();
-            changed = true;
-          }
-        }
-        continue;
-      }
-
-      if (task.notified || !task.dueDate || !task.dueTime) {
-        continue;
-      }
-      const due = getTaskDueDate(task);
-      const minutes = (due.getTime() - now.getTime()) / 60000;
-      if (minutes <= 10 && minutes >= -3) {
-        const shown = await showTaskNotification(task, `${formatDue(task)} · ${task.duration} min`, "due");
-        if (shown) {
-          task.notified = true;
-          task.updatedAt = new Date().toISOString();
-          changed = true;
-        }
-      }
-    }
-    if (!changed) {
-      return;
-    }
-    saveState();
-    scheduleCloudSync();
-  } finally {
-    state.ui.reminderCheckRunning = false;
   }
 }
 
@@ -2166,38 +2070,6 @@ async function ensureNotificationServiceWorker() {
     return await navigator.serviceWorker.ready;
   } catch {
     return null;
-  }
-}
-
-async function showTaskNotification(task, body, kind) {
-  const options = {
-    body,
-    icon: "./assets/icon-192.png",
-    badge: "./assets/icon-192.png",
-    tag: `task-${task.id}-${kind}`,
-    renotify: true,
-    data: {
-      taskId: task.id,
-      url: `${window.location.pathname}${window.location.search}`,
-    },
-    vibrate: [80, 40, 80],
-  };
-
-  try {
-    const registration = await ensureNotificationServiceWorker();
-    if (registration?.showNotification) {
-      await registration.showNotification(task.title, options);
-      return true;
-    }
-  } catch {
-    // Fallback below for browsers that expose notifications but reject service-worker display.
-  }
-
-  try {
-    new Notification(task.title, options);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -2545,7 +2417,7 @@ function compareDue(a, b) {
   if (bDue) {
     return 1;
   }
-  return b.importance - a.importance;
+  return 0;
 }
 
 function compareDateKeys(a, b) {

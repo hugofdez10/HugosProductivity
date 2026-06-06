@@ -126,7 +126,7 @@ summary:focus-visible {
 .topbar {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: auto minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-height: 68px;
@@ -171,27 +171,6 @@ summary:focus-visible {
   font-size: 0.82rem;
 }
 
-.search-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--muted);
-}
-
-.search-field input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-}
-
-.search-field input::placeholder,
 .task-form input::placeholder,
 .task-form textarea::placeholder,
 .auth-form input::placeholder {
@@ -828,8 +807,7 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-.task-meta,
-.task-tags {
+.task-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -899,22 +877,6 @@ h3 {
 
 .task-card[class*="area-"] {
   border-left-color: var(--area);
-}
-
-.priority-dots {
-  display: inline-flex;
-  gap: 3px;
-}
-
-.priority-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.priority-dot.filled {
-  background: var(--coral);
 }
 
 .calendar-section {
@@ -1429,15 +1391,6 @@ svg {
   .app-shell {
     padding: 10px;
     gap: 12px;
-  }
-
-  .topbar {
-    grid-template-columns: 1fr auto;
-  }
-
-  .search-field {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 
   .top-actions {

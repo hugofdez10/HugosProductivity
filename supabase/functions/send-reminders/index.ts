@@ -164,11 +164,10 @@ async function resolvePushPayload(supabase: ReturnType<typeof createClient>, end
 
   const task = (taskRow?.payload || {}) as Record<string, unknown>;
   const title = asString(task.title) || "Hugo's Productivity";
-  const duration = Number(task.duration) || 30;
   const body =
     log.kind === "reminder"
-      ? `Aviso ${formatDateLabel(asString(task.reminderDate))}, ${asString(task.reminderTime)} · ${duration} min`
-      : `${formatDateLabel(asString(task.dueDate))}, ${asString(task.dueTime)} · ${duration} min`;
+      ? `Aviso ${formatDateLabel(asString(task.reminderDate))}, ${asString(task.reminderTime)}`
+      : `${formatDateLabel(asString(task.dueDate))}, ${asString(task.dueTime)}`;
 
   return json({
     title,

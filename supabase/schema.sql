@@ -7,6 +7,23 @@ create table if not exists public.pulso_tasks (
   primary key (user_id, task_id)
 );
 
+do $$
+begin
+  if exists (
+    select 1
+    from pg_publication
+    where pubname = 'supabase_realtime'
+  ) and not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'pulso_tasks'
+  ) then
+    alter publication supabase_realtime add table public.pulso_tasks;
+  end if;
+end $$;
+
 alter table public.pulso_tasks enable row level security;
 
 drop policy if exists "Pulso select own tasks" on public.pulso_tasks;
