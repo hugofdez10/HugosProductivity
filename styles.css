@@ -204,14 +204,15 @@ summary:focus-visible {
 .workspace {
   display: grid;
   grid-template-columns: minmax(360px, 470px) minmax(0, 1fr);
-  grid-template-areas:
-    "tabs calendar"
-    "today calendar"
-    "tasks calendar";
-  grid-auto-rows: max-content;
   align-items: start;
   column-gap: 16px;
-  row-gap: 0;
+}
+
+.schedule-stage {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  min-width: 0;
 }
 
 .panel-section,
@@ -588,7 +589,6 @@ h3 {
 }
 
 .view-tabs {
-  grid-area: tabs;
   align-self: start;
   justify-self: stretch;
   display: grid;
@@ -654,11 +654,11 @@ h3 {
 }
 
 .day-plan-section {
-  grid-area: today;
+  margin-top: 0;
 }
 
 #taskBoardSection {
-  grid-area: tasks;
+  margin-top: 16px;
 }
 
 .date-chip {
@@ -907,7 +907,6 @@ h3 {
 }
 
 .calendar-section {
-  grid-area: calendar;
   min-width: 0;
 }
 
@@ -1420,11 +1419,7 @@ svg {
 
   .workspace {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "tabs"
-      "today"
-      "tasks"
-      "calendar";
+    row-gap: 16px;
   }
 
   .view-tabs {

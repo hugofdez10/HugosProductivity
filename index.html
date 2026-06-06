@@ -10,11 +10,11 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/logo-mark.png" type="image/png" />
     <link rel="apple-touch-icon" href="./assets/icon-192.png" />
-    <link rel="stylesheet" href="./styles.css?v=33" />
+    <link rel="stylesheet" href="./styles.css?v=34" />
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
     <script src="./supabase-config.js" defer></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
-    <script src="./app.js?v=33" defer></script>
+    <script src="./app.js?v=34" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -210,6 +210,7 @@
       </aside>
 
       <main class="workspace">
+        <div class="schedule-stage">
         <nav class="view-tabs" aria-label="Vistas">
           <button class="view-tab active" data-view="today" type="button">
             <i data-lucide="sun" aria-hidden="true"></i>
@@ -250,6 +251,7 @@
           </div>
           <div id="taskBoard" class="task-list"></div>
         </section>
+        </div>
 
         <section class="board-section calendar-section" id="calendarSection" aria-labelledby="calendarTitle">
           <div class="board-header">
