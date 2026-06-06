@@ -46,6 +46,7 @@ const state = {
     user: null,
     pendingEmail: localStorage.getItem("hugos-productivity-pending-email") || "",
     busy: false,
+    showBusy: false,
     timer: null,
     remoteTimer: null,
     channel: null,
@@ -445,7 +446,7 @@ function renderCloudSync() {
     return;
   }
 
-  if (state.sync.busy) {
+  if (state.sync.busy && state.sync.showBusy) {
     els.cloudStatus.classList.add("busy");
     els.cloudStatus.querySelector("span").textContent = "Sincronizando";
     els.authForm.hidden = Boolean(state.sync.user);
@@ -1877,12 +1878,12 @@ function scheduleCloudSync() {
   }
   window.clearTimeout(state.sync.timer);
   state.sync.timer = window.setTimeout(() => {
-    syncNow({ silent: true });
+    syncNow({ silent: true, showBusy: false });
   }, 800);
 }
 
 async function syncNow(options = {}) {
-  const { silent = false } = options;
+  const { silent = false, push = true, showBusy = !silent } = options;
   if (!state.sync.client || !state.sync.user) {
     return;
   }
@@ -1891,11 +1892,16 @@ async function syncNow(options = {}) {
   }
 
   state.sync.busy = true;
-  renderCloudSync();
+  state.sync.showBusy = Boolean(showBusy);
+  if (state.sync.showBusy) {
+    renderCloudSync();
+  }
 
   try {
     await pullRemoteTasks();
-    await pushLocalTasks();
+    if (push) {
+      await pushLocalTasks();
+    }
     pruneDeletedTasks();
     state.sync.lastSyncedAt = new Date().toISOString();
     saveState();
@@ -1910,6 +1916,7 @@ async function syncNow(options = {}) {
     }
   } finally {
     state.sync.busy = false;
+    state.sync.showBusy = false;
     renderCloudSync();
   }
 }
@@ -1949,7 +1956,7 @@ function scheduleRemotePull() {
   }
   window.clearTimeout(state.sync.remoteTimer);
   state.sync.remoteTimer = window.setTimeout(() => {
-    syncNow({ silent: true });
+    syncNow({ silent: true, push: false, showBusy: false });
   }, 250);
 }
 

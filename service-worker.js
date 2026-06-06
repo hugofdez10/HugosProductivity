@@ -1,9 +1,9 @@
-const CACHE_NAME = "pulso-cache-v22";
+const CACHE_NAME = "pulso-cache-v23";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=22",
-  "./app.js?v=22",
+  "./styles.css?v=23",
+  "./app.js?v=23",
   "./supabase-config.js",
   "./manifest.webmanifest",
   "./assets/logo-mark.png",
