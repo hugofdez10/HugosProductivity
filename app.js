@@ -46,11 +46,14 @@ const state = {
     user: null,
     pendingEmail: localStorage.getItem("hugos-productivity-pending-email") || "",
     busy: false,
+    pending: false,
     timer: null,
     remoteTimer: null,
     channel: null,
     lastSyncedAt: "",
     storageKey: "",
+    channel: null,
+    channelUserId: null,
   },
 };
 
@@ -257,8 +260,15 @@ function bindEvents() {
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState === "visible") {
       await syncNow({ silent: true });
+<<<<<<< HEAD
+=======
+      checkReminders();
+    } else {
+      flushPendingCloudSync();
+>>>>>>> d6b29129aa7bb2529b5906f7d325e5e5d8e9670e
     }
   });
+  window.addEventListener("pagehide", flushPendingCloudSync);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.ui.expandedCalendarOpen) {
       closeExpandedCalendar();
@@ -1075,6 +1085,7 @@ function upsertTaskFromForm() {
   const reminderUnchanged =
     existingTask?.reminderDate === reminder.date && existingTask?.reminderTime === reminder.time;
   const dueUnchanged = existingTask?.dueDate === els.taskDate.value && existingTask?.dueTime === els.taskTime.value;
+  const timezone = getLocalTimeZone();
   const task = normalizeTask({
     id: existingId || crypto.randomUUID(),
     title,
@@ -1092,6 +1103,7 @@ function upsertTaskFromForm() {
     weeklyTarget,
     routineEvents: repeatAllowsRoutineEvents(els.taskRepeat.value) ? state.ui.routineEventsDraft : [],
     notes: els.taskNotes.value.trim(),
+    timezone,
     completed: false,
     doneDates: existingTask?.doneDates || [],
     createdAt: existingTask?.createdAt || new Date().toISOString(),
@@ -1110,7 +1122,7 @@ function upsertTaskFromForm() {
 
   resetForm();
   saveState();
-  scheduleCloudSync();
+  syncAfterTaskChange(task);
   render();
 }
 
@@ -1689,9 +1701,12 @@ async function initCloudSync() {
     render();
     if (state.sync.user) {
       syncNow({ silent: true });
+      subscribeRealtime(state.sync.user.id);
       if ("Notification" in window && Notification.permission === "granted") {
         syncPushSubscription({ silent: true });
       }
+    } else {
+      unsubscribeRealtime();
     }
   });
 
@@ -1881,16 +1896,70 @@ function scheduleCloudSync() {
   }, 800);
 }
 
+function syncAfterTaskChange(task) {
+  scheduleCloudSync();
+  if (hasTimedNotification(task)) {
+    syncNow({ silent: true });
+  }
+}
+
+function flushPendingCloudSync() {
+  if (!state.sync.client || !state.sync.user) {
+    return;
+  }
+  window.clearTimeout(state.sync.timer);
+  syncNow({ silent: true });
+}
+
+function hasTimedNotification(task) {
+  return Boolean((task.reminderDate && task.reminderTime) || (task.dueDate && task.dueTime));
+}
+
+function subscribeRealtime(userId) {
+  if (state.sync.channel && state.sync.channelUserId === userId) return;
+  unsubscribeRealtime();
+  state.sync.channelUserId = userId;
+  state.sync.channel = state.sync.client
+    .channel("pulso_tasks_realtime_" + userId)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "pulso_tasks" },
+      async (payload) => {
+        if (payload.new?.user_id && payload.new.user_id !== userId) return;
+        if (payload.old?.user_id && payload.old.user_id !== userId) return;
+        if (state.sync.busy) return;
+        try {
+          await pullRemoteTasks();
+          pruneDeletedTasks();
+          state.sync.lastSyncedAt = new Date().toISOString();
+          saveState();
+          render();
+        } catch (_) {}
+      }
+    )
+    .subscribe();
+}
+
+function unsubscribeRealtime() {
+  if (state.sync.channel) {
+    state.sync.client.removeChannel(state.sync.channel);
+    state.sync.channel = null;
+    state.sync.channelUserId = null;
+  }
+}
+
 async function syncNow(options = {}) {
   const { silent = false } = options;
   if (!state.sync.client || !state.sync.user) {
     return;
   }
   if (state.sync.busy) {
+    state.sync.pending = true;
     return;
   }
 
   state.sync.busy = true;
+  state.sync.pending = false;
   renderCloudSync();
 
   try {
@@ -1911,6 +1980,9 @@ async function syncNow(options = {}) {
   } finally {
     state.sync.busy = false;
     renderCloudSync();
+    if (state.sync.pending) {
+      scheduleCloudSync();
+    }
   }
 }
 
@@ -2149,10 +2221,18 @@ function pushSubscriptionToRow(subscription) {
     endpoint: json.endpoint,
     p256dh: json.keys?.p256dh || "",
     auth: json.keys?.auth || "",
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    timezone: getLocalTimeZone(),
     user_agent: navigator.userAgent || "",
     updated_at: new Date().toISOString(),
   };
+}
+
+function getLocalTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 function urlBase64ToUint8Array(value) {
@@ -2265,6 +2345,7 @@ function normalizeTask(task) {
     weeklyTarget: clampNumber(task.weeklyTarget, 1, 7, 4),
     routineEvents: normalizeRoutineEvents(task.routineEvents || []),
     notes: task.notes || "",
+    timezone: task.timezone || "",
     completed: Boolean(task.completed),
     completedAt: task.completedAt || "",
     doneDates: Array.isArray(task.doneDates) ? [...new Set(task.doneDates.filter(Boolean))] : [],
