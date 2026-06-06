@@ -99,6 +99,7 @@ function cacheElements() {
     "taskForm",
     "editingId",
     "taskTitle",
+    "taskEmoji",
     "taskDate",
     "taskTime",
     "taskReminderDate",
@@ -594,6 +595,7 @@ function renderCalendar() {
     ];
     const weeklyTargetItems = bucket.weeklyTargets;
     const visibleNormalItems = dayItems.slice(0, Math.max(0, 3 - weeklyTargetItems.length));
+    const emojiItems = dayItems.map((item) => calendarEmojiItemTemplate(item, key)).filter(Boolean).slice(0, 4);
     const totalItems = dayItems.length + weeklyTargetItems.length;
     const outside = date.getMonth() !== monthStart.getMonth();
     const classes = [
@@ -614,6 +616,7 @@ function renderCalendar() {
           ${weeklyTargetItems.slice(0, 3).map((item) => calendarRoutineItemTemplate(item, key)).join("")}
           ${totalItems > 3 ? `<span class="more-items">+${totalItems - 3}</span>` : ""}
         </span>
+        ${emojiItems.length ? `<span class="day-emojis">${emojiItems.join("")}</span>` : ""}
       </button>
     `;
   }).join("");
@@ -836,9 +839,19 @@ function getCalendarBuckets(dateKeys) {
 
 function calendarTaskItemTemplate(item, dateKey) {
   const sportDone = item.completed && isSportTask(item.task);
-  const label = sportDone ? SPORT_DONE_EMOJI : formatRoutineOccurrenceTitle(item.task, dateKey);
-  const title = sportDone ? `Deporte completado: ${formatRoutineOccurrenceTitle(item.task, dateKey)}` : label;
+  const taskTitle = formatRoutineOccurrenceTitle(item.task, dateKey);
+  const label = sportDone ? SPORT_DONE_EMOJI : `${item.task.emoji ? `${item.task.emoji} ` : ""}${taskTitle}`;
+  const title = sportDone ? `Deporte completado: ${taskTitle}` : taskTitle;
   return `<span class="day-item ${item.completed ? "done" : ""} ${sportDone ? "sport-done" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+}
+
+function calendarEmojiItemTemplate(item, dateKey) {
+  const emoji = item.completed && isSportTask(item.task) ? SPORT_DONE_EMOJI : item.task.emoji;
+  if (!emoji) {
+    return "";
+  }
+  const title = formatRoutineOccurrenceTitle(item.task, dateKey);
+  return `<span class="day-emoji ${item.completed ? "done" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(emoji)}</span>`;
 }
 
 function calendarRoutineItemTemplate(item, dateKey) {
@@ -1079,6 +1092,7 @@ function upsertTaskFromForm() {
   const task = normalizeTask({
     id: existingId || crypto.randomUUID(),
     title,
+    emoji: normalizeTaskEmoji(els.taskEmoji.value),
     dueDate: els.taskDate.value,
     dueTime: els.taskTime.value,
     reminderDate: reminder.date,
@@ -1179,6 +1193,7 @@ function editTask(taskId) {
   }
   els.editingId.value = task.id;
   els.taskTitle.value = task.title;
+  els.taskEmoji.value = task.emoji || "";
   els.taskDate.value = task.dueDate;
   els.taskTime.value = task.dueTime;
   els.taskReminderDate.value = task.reminderDate || "";
@@ -1247,6 +1262,7 @@ function updateTask(taskId, patch) {
 function resetForm() {
   els.taskForm.reset();
   els.editingId.value = "";
+  els.taskEmoji.value = "";
   els.taskReminderDate.value = "";
   els.taskReminderTime.value = "";
   setOptionalControlValue(els.taskEnergy, "media");
@@ -2242,6 +2258,14 @@ function registerServiceWorker() {
     return;
   }
   window.addEventListener("load", () => {
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) {
+        return;
+      }
+      refreshing = true;
+      window.location.reload();
+    });
     navigator.serviceWorker
       .register("./service-worker.js")
       .then((registration) => registration.update())
@@ -2256,6 +2280,7 @@ function normalizeTask(task) {
   return {
     id: task.id || crypto.randomUUID(),
     title: String(task.title || "").trim(),
+    emoji: normalizeTaskEmoji(task.emoji || ""),
     dueDate: task.dueDate || "",
     dueTime: task.dueTime || "",
     reminderDate: task.reminderDate || "",
@@ -2280,6 +2305,18 @@ function normalizeTask(task) {
     notified: Boolean(task.notified),
     reminderNotified: Boolean(task.reminderNotified),
   };
+}
+
+function normalizeTaskEmoji(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  if (window.Intl?.Segmenter) {
+    const [segment] = new Intl.Segmenter("es", { granularity: "grapheme" }).segment(text);
+    return segment?.segment || "";
+  }
+  return Array.from(text)[0] || "";
 }
 
 function normalizeTaskArea(area) {

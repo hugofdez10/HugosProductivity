@@ -115,7 +115,6 @@ summary:focus-visible {
 .topbar,
 .panel-section,
 .board-section,
-.view-tabs,
 .stats-strip {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -204,9 +203,15 @@ summary:focus-visible {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 640px);
+  grid-template-columns: minmax(360px, 470px) minmax(0, 1fr);
+  grid-template-areas:
+    "tabs calendar"
+    "today calendar"
+    "tasks calendar";
   grid-auto-rows: max-content;
-  gap: 16px;
+  align-items: start;
+  column-gap: 16px;
+  row-gap: 0;
 }
 
 .panel-section,
@@ -437,6 +442,15 @@ h3 {
   padding: 8px 10px;
 }
 
+.compact-field-grid {
+  grid-template-columns: minmax(84px, 120px) minmax(0, 1fr);
+}
+
+.emoji-field input {
+  text-align: center;
+  font-size: 1.25rem;
+}
+
 .task-form select,
 .sort-field select {
   color-scheme: dark;
@@ -574,31 +588,40 @@ h3 {
 }
 
 .view-tabs {
-  grid-column: 1 / -1;
+  grid-area: tabs;
+  align-self: start;
+  justify-self: stretch;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .view-tab {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
+  min-height: 34px;
   padding: 0 10px;
   color: var(--muted);
   background: transparent;
   border: 1px solid transparent;
-  font-size: 0.86rem;
+  border-radius: calc(var(--radius-sm) - 2px);
+  font-size: 0.82rem;
   font-weight: 800;
 }
 
 .view-tab.active {
-  color: var(--blue);
-  background: rgba(104, 232, 255, 0.08);
-  border-color: rgba(104, 232, 255, 0.22);
+  color: #031014;
+  background: var(--blue);
+  border-color: transparent;
+  box-shadow: 0 8px 20px rgba(104, 232, 255, 0.16);
 }
 
 .stats-strip {
@@ -631,7 +654,11 @@ h3 {
 }
 
 .day-plan-section {
-  grid-column: 1;
+  grid-area: today;
+}
+
+#taskBoardSection {
+  grid-area: tasks;
 }
 
 .date-chip {
@@ -880,8 +907,8 @@ h3 {
 }
 
 .calendar-section {
-  grid-column: 2;
-  grid-row: 2 / span 2;
+  grid-area: calendar;
+  min-width: 0;
 }
 
 .calendar-grid {
@@ -1214,6 +1241,10 @@ h3 {
   min-width: 0;
 }
 
+.day-emojis {
+  display: none;
+}
+
 .day-item {
   min-width: 0;
   overflow: hidden;
@@ -1241,6 +1272,21 @@ h3 {
   background: rgba(77, 255, 210, 0.16);
   font-size: 1rem;
   text-decoration: none;
+}
+
+.day-emoji {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.day-emoji.done {
+  opacity: 0.72;
 }
 
 .day-routine {
@@ -1356,7 +1402,14 @@ svg {
 
 @media (max-width: 1280px) {
   .workspace {
-    grid-template-columns: minmax(0, 1fr) minmax(360px, 500px);
+    grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 0;
+  }
+
+  .view-tab {
+    padding: 0 8px;
+    font-size: 0.78rem;
   }
 }
 
@@ -1367,15 +1420,22 @@ svg {
 
   .workspace {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "tabs"
+      "today"
+      "tasks"
+      "calendar";
   }
 
-  .calendar-section {
-    grid-column: auto;
-    grid-row: auto;
+  .view-tabs {
+    justify-self: stretch;
+    width: 100%;
   }
 
-  .day-plan-section {
-    grid-column: auto;
+  .view-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 0 14px;
   }
 
   h1 {
@@ -1415,7 +1475,12 @@ svg {
   }
 
   .view-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .view-tab {
+    flex: 1;
   }
 
   .calendar-grid {
@@ -1525,6 +1590,21 @@ svg {
 
   .day-items {
     display: none;
+  }
+
+  .day-emojis {
+    display: flex;
+    align-content: start;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .day-emoji {
+    width: 22px;
+    height: 22px;
+    font-size: 0.94rem;
   }
 
   .expanded-calendar {
